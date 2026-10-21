@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csp-nonce" content="{{CSP_NONCE}}">
+  <meta name="color-scheme" content="light dark">
+  <title>PayOnProof</title>
+  <meta name="description" content="An AI accounts-payable agent that pays subcontractors only for work it can prove, through PayPal.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/theme.js"></script>
+  <script defer src="/vendor/ag-grid-community.min.noStyle.js"></script>
+  <script defer src="/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the workspace</a>
+
+  <header class="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="/" aria-label="PayOnProof home">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+          <defs><clipPath id="brand-clip"><rect x="1.5" y="1.5" width="29" height="29" rx="5"/></clipPath></defs>
+          <rect x="1.5" y="1.5" width="29" height="29" rx="5" class="mark-frame"/>
+          <g clip-path="url(#brand-clip)"><path d="M19 30l11-11M24 30l6-6M14 30l16-16" class="mark-hatch"/></g>
+          <path d="M8 16.5l5 5 11-12" class="mark-tick"/>
+        </svg>
+        <span class="brand-text">
+          <span class="wordmark">PayOnProof</span>
+          <span class="tagline">Accounts payable for construction subcontractors</span>
+        </span>
+      </a>
+      <div class="masthead-status">
+        <span class="hazard-badge" id="env-badge">Sandbox: no real money</span>
+        <span class="chip" id="paypal-badge" hidden></span>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Colour theme: follow system">
+          <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="6.5"/><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" class="fill"/></svg>
+          <span class="theme-label" id="theme-label">System</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <section class="intro" aria-labelledby="intro-title">
+    <h1 id="intro-title">Pays subcontractors only for work it can prove.</h1>
+    <p>An AI reads the invoice, the site manager's timesheets and the delivery notes. Fixed rules prove every line against them and the contract rates. You approve the exact amount, PayPal pays it, and the payout is read back from PayPal as proof.</p>
+  </section>
+
+  <nav class="progress" aria-label="Steps">
+    <ol>
+      <li data-step="documents"><span class="step-no">1</span><span>Documents</span></li>
+      <li data-step="proof"><span class="step-no">2</span><span>Proof</span></li>
+      <li data-step="approve"><span class="step-no">3</span><span>Approve</span></li>
+      <li data-step="pay"><span class="step-no">4</span><span>Pay and read back</span></li>
+    </ol>
+  </nav>
+
+  <main id="main" tabindex="-1">
+    <section class="sheet" id="documents" aria-labelledby="documents-title">
+      <div class="sheet-head">
+        <h2 id="documents-title"><span class="step-no" aria-hidden="true">1</span>Documents</h2>
+        <p class="lead">Pick a case: a contract with the agreed rates, the subcontractor's invoice, the site manager's timesheet and the delivery notes.</p>
+      </div>
+
+      <div class="tabs" role="tablist" aria-label="Document source">
+        <button type="button" role="tab" id="tab-samples" aria-controls="panel-samples" aria-selected="true">Sample cases</button>
+        <button type="button" role="tab" id="tab-paste" aria-controls="panel-paste" aria-selected="false" tabindex="-1">Your documents</button>
+      </div>
+
+      <div id="panel-samples" role="tabpanel" aria-labelledby="tab-samples">
+        <fieldset class="case-picker" id="case-picker">
+          <legend class="visually-hidden">Sample case</legend>
+          <p class="placeholder-text">Loading sample cases…</p>
+        </fieldset>
+        <p class="fiction-note">All companies, people and addresses in the samples are fictional.</p>
+      </div>
+
+      <div id="panel-paste" role="tabpanel" aria-labelledby="tab-paste" hidden>
+        <p class="panel-note" id="paste-note"></p>
+        <div class="paste-tools">
+          <label for="paste-sample">Start from a sample</label>
+          <select id="paste-sample"></select>
+          <button type="button" class="button-quiet" id="paste-fill">Copy its text into the fields</button>
+        </div>
+        <div class="paste-grid">
+          <div class="paste-field">
+            <label for="paste-contract">Contract or rate sheet <span class="required">required</span></label>
+            <textarea id="paste-contract" data-type="contract" rows="8" spellcheck="false"></textarea>
+            <label class="file-pick"><input type="file" accept=".txt,.md,.csv,text/plain" data-target="paste-contract"><span>Load a text file</span></label>
+          </div>
+          <div class="paste-field">
+            <label for="paste-invoice">Invoice <span class="required">required</span></label>
+            <textarea id="paste-invoice" data-type="invoice" rows="8" spellcheck="false"></textarea>
+            <label class="file-pick"><input type="file" accept=".txt,.md,.csv,text/plain" data-target="paste-invoice"><span>Load a text file</span></label>
+          </div>
+          <div class="paste-field">
+            <label for="paste-timesheet">Timesheets</label>
+            <textarea id="paste-timesheet" data-type="timesheet" rows="8" spellcheck="false"></textarea>
+            <label class="file-pick"><input type="file" accept=".txt,.md,.csv,text/plain" data-target="paste-timesheet"><span>Load a text file</span></label>
+          </div>
+          <div class="paste-field">
+            <label for="paste-delivery">Delivery notes</label>
+            <textarea id="paste-delivery" data-type="delivery_notes" rows="8" spellcheck="false"></textarea>
+            <label class="file-pick"><input type="file" accept=".txt,.md,.csv,text/plain" data-target="paste-delivery"><span>Load a text file</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="intake-actions">
+        <button type="button" class="button-primary" id="analyze-btn">Verify against evidence</button>
+        <p class="reader-line" id="reader-line"></p>
+      </div>
+      <p class="inline-alert" id="analyze-error" role="alert" hidden></p>
+
+      <details class="doc-viewer" id="doc-viewer" hidden>
+        <summary>Show the documents</summary>
+        <div class="doc-tabs" role="tablist" aria-label="Documents" id="doc-tabs"></div>
+        <pre class="doc-text" id="doc-text" tabindex="0" aria-label="Document text"></pre>
+      </details>
+    </section>
+
+    <section class="sheet" id="proof" aria-labelledby="proof-title" hidden>
+      <div class="sheet-head">
+        <h2 id="proof-title"><span class="step-no" aria-hidden="true">2</span>Proof</h2>
+        <p class="lead">Every invoice line is checked against signed timesheets, delivery notes and the contract rates. The AI only reads the documents; the amounts below come from fixed, tested rules.</p>
+      </div>
+
+      <dl class="title-block" id="title-block"></dl>
+
+      <div class="ledger" id="ledger">
+        <div class="ledger-figure" data-kind="claimed">
+          <span class="ledger-label">Claimed</span>
+          <span class="ledger-amount" id="sum-claimed"></span>
+          <span class="ledger-note" id="sum-claimed-note"></span>
+        </div>
+        <div class="ledger-figure" data-kind="payable">
+          <span class="ledger-label">Payable</span>
+          <span class="ledger-amount" id="sum-payable"></span>
+          <span class="ledger-note" id="sum-payable-note"></span>
+        </div>
+        <div class="ledger-figure" data-kind="disputed">
+          <span class="ledger-label">Disputed</span>
+          <span class="ledger-amount" id="sum-disputed"></span>
+          <span class="ledger-note" id="sum-disputed-note"></span>
+        </div>
+        <div class="proof-bar" id="proof-bar" role="img">
+          <span class="proof-bar-paid" id="proof-bar-paid"></span>
+          <span class="proof-bar-cut" id="proof-bar-cut"></span>
+        </div>
+        <div class="proof-legend" aria-hidden="true">
+          <span class="legend-paid">Proven, will be paid</span>
+          <span class="legend-cut">Not proven, held back</span>
+        </div>
+      </div>
+
+      <ul class="findings" id="case-findings"></ul>
+
+      <div class="grid-wrap">
+        <p class="grid-hint" id="grid-hint">Select a line to see its proof.</p>
+        <div id="lines-grid" class="lines-grid"></div>
+      </div>
+
+      <div class="inspector" id="inspector" aria-live="polite"></div>
+    </section>
+
+    <section class="sheet" id="approve" aria-labelledby="approve-title" hidden>
+      <div class="sheet-head">
+        <h2 id="approve-title"><span class="step-no" aria-hidden="true">3</span>Approve</h2>
+        <p class="lead">Nothing is paid until a person approves this exact payment. Changing the message or the case withdraws the approval.</p>
+      </div>
+      <div class="approve-layout">
+        <div class="message-panel">
+          <h3 id="message-title">Message to the subcontractor</h3>
+          <p class="meta-line" id="message-meta"></p>
+          <p class="note" id="message-note" hidden></p>
+          <label class="visually-hidden" for="message-text">Message text</label>
+          <textarea id="message-text" rows="16" aria-describedby="message-meta"></textarea>
+          <div class="button-row">
+            <button type="button" class="button-quiet" id="save-message" disabled>Save message</button>
+            <button type="button" class="button-quiet" id="copy-message">Copy message</button>
+          </div>
+          <p class="inline-alert" id="message-error" role="alert" hidden></p>
+        </div>
+
+        <div class="approval-panel" id="approval-panel">
+          <h3>Approve exactly this payment</h3>
+          <p class="approval-sentence" id="approval-sentence"></p>
+          <p class="note" id="override-note" hidden></p>
+          <ul class="findings" id="proposal-blockers"></ul>
+          <div class="hash-block">
+            <span class="hash-label" id="preview-hash-label">Preview hash (SHA-256)</span>
+            <code class="hash" id="preview-hash" aria-labelledby="preview-hash-label"></code>
+          </div>
+          <details class="payload">
+            <summary>Exact payload that is hashed</summary>
+            <pre id="preview-json" tabindex="0"></pre>
+          </details>
+          <label class="confirm">
+            <input type="checkbox" id="confirm-check">
+            <span>I checked the payee, the amount and the paid lines.</span>
+          </label>
+          <div class="passcode" id="passcode-row" hidden>
+            <label for="passcode">Approver passcode</label>
+            <input type="password" id="passcode" autocomplete="off">
+          </div>
+          <button type="button" class="button-sign" id="approve-btn" disabled>
+            <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 15.5c2.5-1 3.8-4 5.4-4.1 1.4 0 .7 3 2.2 3.1 1.3 0 2-2.1 3-2.1.8 0 1 1 1.9 1.2"/><path d="M3 18h14"/></svg>
+            Approve exactly this payment
+          </button>
+          <div class="approval-state" id="approval-state" aria-live="polite"></div>
+          <p class="inline-alert" id="approve-error" role="alert" hidden></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sheet" id="pay" aria-labelledby="pay-title" hidden>
+      <div class="sheet-head">
+        <h2 id="pay-title"><span class="step-no" aria-hidden="true">4</span>Pay and read back</h2>
+        <p class="lead">PayPal Payouts sends the money. The status below is read back from PayPal, never assumed.</p>
+      </div>
+      <div class="pay-row">
+        <button type="button" class="button-paypal" id="pay-btn" disabled>Pay with PayPal (sandbox)</button>
+        <p class="pay-hint" id="pay-hint"></p>
+      </div>
+      <p class="inline-alert" id="pay-error" role="alert" hidden></p>
+      <div class="receipt" id="receipt" hidden></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>PayOnProof is open source under the MIT licence. It pays through the PayPal sandbox only; no real money moves.</p>
+    <p>Agents can use it over MCP at <code>/mcp</code>. They can verify and propose, but only a person can approve.</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
