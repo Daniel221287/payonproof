@@ -6,7 +6,7 @@ AI reads the messy documents. A deterministic engine proves every invoice line a
 
 ![Proof view: claimed €6,338.00, payable €5,035.00, every line with its verdict](docs/img/desktop-light-proof.png)
 
-Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce). Uses the PayPal developer platform (Payouts, sandbox), any LLM (Gemini or OpenAI-compatible), AG Grid Community and runs on Render.
+Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community and runs on Render.
 
 ---
 
@@ -123,13 +123,27 @@ The receipt is canonical JSON with its own SHA-256, downloadable from the page.
 | Phrases the explanation to the subcontractor in their language | Who gets paid (the payee comes from the contract) |
 | | Whether to pay (only a person's approval can) |
 
-- **Providers** (`AI_PROVIDER`): `gemini` calls `POST https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` (default `gemini-2.5-flash`) with the key in the `x-goog-api-key` header and `generationConfig: { responseMimeType: 'application/json', temperature: 0 }`. `openai` calls any OpenAI-compatible `/chat/completions` endpoint (`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, for example local Ollama at `http://127.0.0.1:11434/v1`) with `response_format: {type: 'json_object'}`, dropped automatically if the server rejects it. `offline` (the default without keys) is a deterministic parser for the bundled sample layout only, labelled **Offline sample parser — no AI used** everywhere.
+- **Providers** (`AI_PROVIDER`): `nebius` calls NVIDIA Nemotron on Nebius Token Factory (see [below](#nvidia-nemotron-on-nebius-token-factory)). `gemini` calls `POST https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent` (default `gemini-2.5-flash`) with the key in the `x-goog-api-key` header and `generationConfig: { responseMimeType: 'application/json', temperature: 0 }`. `openai` calls any OpenAI-compatible `/chat/completions` endpoint (`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, for example local Ollama at `http://127.0.0.1:11434/v1`) with `response_format: {type: 'json_object'}`, dropped automatically if the server rejects it. `offline` (the default without keys) is a deterministic parser for the bundled sample layout only, labelled **Offline sample parser — no AI used** everywhere.
 - **Isolation**: each document is extracted in its own call and wrapped as untrusted data, so text in the subcontractor's invoice cannot influence how the site manager's timesheets are read. The claimant can never create evidence.
 - **Validation**: a hand-written validator (`src/schema.mjs`) rejects missing fields, non-numbers, localised number strings (`"1.040,00"`), negative values, impossible dates, duplicate ids and over-precise values; plain numeric strings are converted with a visible warning. A rejected document blocks payment.
 - **No model arithmetic**: printed totals are kept only as the claim; every payable amount is recomputed in integer cents.
 - **Provenance**: every extraction records provider, model, prompt version, duration and the SHA-256 of the input documents, shown on screen.
 - **Messages**: AI drafts must contain the totals and every disputed line with its exact paid amount; otherwise the fixed template is used and the page says so. A person can edit the text before approving, which changes the preview hash.
 - **Cost guard**: `AI_MAX_CALLS_PER_HOUR` caps model calls for the whole server; identical documents are served from a cache.
+
+## NVIDIA Nemotron on Nebius Token Factory
+
+The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://tokenfactory.nebius.com)'s OpenAI-compatible API.
+
+| Step | Call | Model |
+| --- | --- | --- |
+| Read each document into strict JSON (one isolated call per document, four per sample case) | `POST https://api.tokenfactory.nebius.com/v1/chat/completions`, `response_format: {type: 'json_object'}`, `temperature: 0` | `NEBIUS_MODEL`, default `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` |
+| Draft the explanation to the subcontractor in their language (fact-checked before use) | same endpoint | same model |
+
+- **Setup**: create a key at tokenfactory.nebius.com > **API keys** and set `NEBIUS_API_KEY` (in `.env` or the Render dashboard). With only `NEBIUS_API_KEY` set, the provider is chosen automatically; `NEBIUS_MODEL` picks another catalog model. The key is sent only as `Authorization: Bearer …` to `NEBIUS_BASE_URL` and is redacted from every error.
+- **What Nemotron decides**: nothing about money. It turns text into fields; the validator rejects anything malformed; amounts and verdicts come from the deterministic engine; a person approves; PayPal pays.
+- **Reasoning output**: if the model writes its reasoning before the answer (`…</think>`), only the answer after it is parsed; an answer cut off while still reasoning is reported as incomplete and blocks payment.
+- **Cost guard**: `AI_MAX_CALLS_PER_HOUR` and `AI_MAX_CALLS_PER_DAY` cap model calls for the whole server, and identical documents are served from a cache, so the public demo stays inside its credits.
 
 ## Agentic commerce over MCP
 
@@ -199,13 +213,13 @@ npm start            # 127.0.0.1:4410; offline AI; PayPal as configured in .env
 npm run demo         # same, but with MOCK PayPal (no network at all)
 ```
 
-Use Gemini by adding `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`) to `.env`, or a local model with `AI_PROVIDER=openai`, `AI_BASE_URL=http://127.0.0.1:11434/v1`, `AI_MODEL=<model>`. With an AI provider you can paste any plain-text documents on the **Your documents** tab; offline mode reads only the sample layout (start from a sample and change numbers to watch the verdicts move). Every variable is documented in [`.env.example`](.env.example).
+Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and optionally `NEBIUS_MODEL`) to `.env`, Gemini with `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`), or a local model with `AI_PROVIDER=openai`, `AI_BASE_URL=http://127.0.0.1:11434/v1`, `AI_MODEL=<model>`. With an AI provider you can paste any plain-text documents on the **Your documents** tab; offline mode reads only the sample layout (start from a sample and change numbers to watch the verdicts move). Every variable is documented in [`.env.example`](.env.example).
 
 ## Deploy on Render
 
 1. Push the repository to GitHub.
 2. In Render: **New > Web Service**, connect the repository. Runtime **Node**, build command `npm ci`, start command `npm start`, instance type **Free**, health check path `/health`. (Or **New > Blueprint** with the included `render.yaml`.)
-3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), optionally `GEMINI_API_KEY`, `AI_MAX_CALLS_PER_HOUR`, `APPROVER_PASSCODE`, `MCP_BEARER_TOKEN`.
+3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), an AI key (`NEBIUS_API_KEY` or `GEMINI_API_KEY`), `AI_MAX_CALLS_PER_HOUR`, `AI_MAX_CALLS_PER_DAY`, `APPROVER_PASSCODE`, `MCP_BEARER_TOKEN`.
 4. Render sets `PORT` and `RENDER_EXTERNAL_HOSTNAME`; the server then listens on `0.0.0.0`, allows that host name and trusts the proxy headers. Add custom domains to `ALLOWED_HOSTS`.
 
 Free instances sleep when idle; cases, approvals and receipts live in memory and are gone after a restart.
@@ -213,7 +227,7 @@ Free instances sleep when idle; cases, approvals and receipts live in memory and
 ## Tests
 
 ```bash
-npm test             # node --test: 117 tests, no network
+npm test             # node --test: 120 tests, no network
 npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK PayPal, writes docs/img/*.png
 ```
 
@@ -224,7 +238,7 @@ The unit and integration tests cover every verdict and the rounding rules, the e
 ```
 server.mjs              HTTP server, API, static files, security headers
 mcp.mjs                 MCP tools over Streamable HTTP
-src/ai.mjs              Gemini, OpenAI-compatible and offline providers
+src/ai.mjs              Nebius Token Factory, Gemini, OpenAI-compatible and offline providers
 src/extract.mjs         per-document extraction, provenance, cache
 src/offline-parser.mjs  deterministic reader for the sample layout (not AI)
 src/schema.mjs          strict validator, normalises to cents and thousandths
