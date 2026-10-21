@@ -80,15 +80,17 @@ All money is integer cents; quantities are integer thousandths. Each line gets o
 | `ROLE_MISMATCH` | The signed timesheet gives another trade than the invoice (a steel fixer billed as foreman) | at the contract rate of the trade on the timesheet, never above the invoiced price |
 | `PARTIAL` | Signed hours or delivered quantity below the claim | proven quantity × allowed rate |
 | `RATE_ABOVE_CONTRACT` | Unit price above the contract rate | at the contract rate |
-| `MATH_ERROR` | Printed line total differs from quantity × price by one cent or more | the correct product |
+| `MATH_ERROR` | Printed line total differs from quantity × price by one cent or more | the correct product, but never more than printed |
+| `OVER_INVOICE_TOTAL` | The printed invoice total is below what the proven lines come to | up to the printed total (the lines that cross it are cut, in invoice order) |
 | `OVER_CAP` | The contract's payment cap per invoice is reached | up to the cap |
 | `PROVEN` | Fully evidenced at or below the contract rate, arithmetic correct | as invoiced |
 
 - **Who signed**: a sign-off counts only when its name fits the site manager printed on the timesheet: the surname written in full (diacritics folded, any order) and any initials consistent. `K. Vogelsang` and `Vogelsang, Katrin` fit `Katrin Vogelsang`; `T. Brzezina` and `T. Vogelsang` do not, and the line says "signed by T. Brzezina, not by the site manager Katrin Vogelsang". If a sheet names no site manager, or a sign-off has no name, the signer cannot be checked: the entry still counts and a warning says so. The AI only copies the names; this rule decides.
 - **Evidence is consumed line by line**: one signed day or one delivery note can never prove two lines. Two identical lines are both paid when the evidence really covers both (two concrete trucks on the same day).
 - **Matching is deterministic**: names are compared order-independently with diacritics folded (`Kordecki, Adam` = `Adam Kordecki`, `Paweł` = `Pawel`), materials by article code or name, roles by name or the aliases written in the contract (`Dachdecker` / `Dekarz`; the trade on the signed timesheet must be the same role as on the invoice), units through a fixed table (`Std.`, `godz.`, `h`; `m³`, `m3`; `Rolle`, `rol.`).
-- **Rounding**: a line amount is quantity × unit price rounded half-up to the cent, per line. Totals are sums of rounded lines and are never rounded again. A printed line total within one cent of the exact product is correct (any rounding convention) and is paid exactly as printed; otherwise the correct product is paid.
-- **Case checks**: a currency that differs from the contract blocks payment. A different PayPal address on the invoice is flagged and ignored: the payee always comes from the contract. A printed invoice total that does not add up is flagged.
+- **Never more than invoiced**: a line pays at most its printed amount and the case pays at most the printed invoice total, so claimed = payable + disputed, line by line and in total. When the proven work comes to more than a line's printed amount, the line is paid as printed and an informational `UNDERBILLED` note (in the line and in the message) says how much more could be invoiced; it is never paid automatically.
+- **Rounding**: a line amount is quantity × unit price rounded half-up to the cent, per line. Totals are sums of rounded lines and are never rounded again. A printed line total within one cent of the exact product is correct (any rounding convention) and is paid exactly as printed; otherwise the correct product is paid, or the printed amount if that is lower.
+- **Case checks**: a currency that differs from the contract blocks payment. A different PayPal address on the invoice is flagged and ignored: the payee always comes from the contract. A printed invoice total that does not add up is flagged, and the payout never exceeds it.
 
 ## PayPal integration
 

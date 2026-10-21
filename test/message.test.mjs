@@ -120,3 +120,47 @@ test('role upcoding is explained in the message in all four languages', async ()
     assert.deepEqual(factCheckMessage(text, facts), []);
   }
 });
+
+async function honestWith(edit) {
+  const sample = samples.find((s) => s.id === 'honest');
+  const documents = sample.documents.map((doc) => (doc.type === 'invoice' ? { ...doc, text: edit(doc.text) } : doc));
+  const { input } = assembleCaseInput(await extractDocuments(documents, { provider: offline }));
+  return input;
+}
+
+test('an under-billed line is paid as printed and the message says the difference may be invoiced', async () => {
+  const input = await honestWith((text) => text.replace('| 8.00 | h    | 39.50      | 316.00', '| 8.00 | h    | 39.50      | 306.00').replace('Total: 2,270.63', 'Total: 2,260.63'));
+  const verification = verifyCase(input);
+  assert.equal(verification.totals.payableCents, 226063, 'never more than the 2,260.63 invoiced');
+  assert.equal(verification.totals.claimedCents, 226063);
+  const expected = {
+    en: ['so we are paying the full €2,260.63', 'These lines are worth more than you invoiced. We pay them as invoiced; you may invoice the difference:', '- Line 1 (Tomasz Brzezina, 14/09/2026): invoiced €306.00, proven €316.00, difference €10.00.'],
+    de: ['die Differenz können Sie nachberechnen:', '- Pos. 1 (Tomasz Brzezina, 14.09.2026): berechnet 306,00\u00a0€, nachgewiesen 316,00\u00a0€, Differenz 10,00\u00a0€.'],
+    pl: ['różnicę mogą Państwo zafakturować osobno:', '- Poz. 1 (Tomasz Brzezina, 14.09.2026): zafakturowano 306,00\u00a0€, potwierdzono 316,00\u00a0€, różnica 10,00\u00a0€.'],
+    uk: ['різницю ви можете виставити окремо:', '- Позиція 1 (Tomasz Brzezina, 14.09.2026): виставлено 306,00\u00a0EUR, підтверджено 316,00\u00a0EUR, різниця 10,00\u00a0EUR.'],
+  };
+  for (const [language, phrases] of Object.entries(expected)) {
+    const facts = buildMessageFacts({ contract: { ...input.contract, language }, invoice: input.invoice, verification });
+    const text = templateMessage(facts);
+    for (const phrase of phrases) assert.ok(text.includes(phrase), `${language} lacks "${phrase}":\n${text}`);
+    assert.deepEqual(factCheckMessage(text, facts), []);
+  }
+  const facts = buildMessageFacts({ contract: input.contract, invoice: input.invoice, verification });
+  assert.ok(factCheckMessage(templateMessage(facts).replace(/\n\nThese lines[\s\S]*?€10\.00\./, ''), facts).includes('difference €10.00 of line 1 that may be invoiced'));
+});
+
+test('a printed invoice total below the lines caps the payout and the message names the cap', async () => {
+  const input = await honestWith((text) => text.replace('Total: 2,270.63', 'Total: 1,000.00'));
+  const verification = verifyCase(input);
+  assert.equal(verification.totals.payableCents, 100000);
+  const facts = buildMessageFacts({ contract: input.contract, invoice: input.invoice, verification });
+  const text = templateMessage(facts);
+  assert.match(text, /We are paying €1,000\.00 of the €2,270\.63 invoiced/);
+  assert.match(text, /- Line 4 \(Kamil Sośnicki, 15\/09\/2026\): invoiced €280\.50, paid €113\.87\. Reason: the invoice total €1,000\.00 is below the sum of the lines, so no more than €1,000\.00 is paid in total\./);
+  assert.match(text, /The invoice total €1,000\.00 does not match the sum of its lines €2,270\.63; we checked the invoice line by line\./);
+  assert.deepEqual(factCheckMessage(text, facts), []);
+  for (const language of ['de', 'pl', 'uk']) {
+    const localized = buildMessageFacts({ contract: { ...input.contract, language }, invoice: input.invoice, verification });
+    assert.deepEqual(factCheckMessage(templateMessage(localized), localized), [], language);
+  }
+});

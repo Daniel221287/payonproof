@@ -172,16 +172,41 @@ test('rounding: half-up per line, printed totals within one cent are accepted as
   assert.equal(byId(partial, '3').payableCents, 30613, 'proven 7.75 h x 39.50 rounded half-up');
 });
 
-test('totals balance: claimed - disputed + in favour = payable', () => {
+test('never more than invoiced: an under-billed line is paid as printed and the difference is reported', () => {
   const result = run({
     lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9), labour('2', 'Adam Kordecki', '2026-09-15', 8, 4100, 30000), concrete('3', '2026-09-16', 22)],
     entries: [entry('Adam Kordecki', '2026-09-14', 9), entry('Adam Kordecki', '2026-09-15', 8)],
     notes: [note('LS-1', '2026-09-16', 18)],
   });
   const t = result.totals;
-  assert.equal(byId(result, '2').inFavourCents, 2800, 'an arithmetic error against the subcontractor is corrected in their favour');
-  assert.equal(t.claimedCents - t.disputedCents + t.inFavourCents, t.payableCents);
+  const line2 = byId(result, '2');
+  assert.equal(line2.verdict, 'MATH_ERROR');
+  assert.equal(line2.provenValueCents, 32800, '8 h x 41.00 are proven');
+  assert.equal(line2.payableCents, 30000, 'but only the 300.00 invoiced is paid');
+  assert.deepEqual(line2.findings.map((f) => f.code), ['MATH_ERROR', 'UNDERBILLED']);
+  assert.equal(line2.findings[1].params.differenceCents, 2800);
+  assert.match(line2.reason, /Paid as printed \(€300\.00\): the proven work comes to €328\.00, so €28\.00 more could be invoiced\./);
+  assert.ok(result.lines.every((line) => line.payableCents <= line.claimedCents), 'no line pays more than its claim');
+  assert.equal(t.claimedCents, t.payableCents + t.disputedCents, 'claimed = payable + disputed');
   assert.equal(t.payableCents, result.lines.reduce((sum, line) => sum + line.payableCents, 0));
+  assert.equal('inFavourCents' in t, false);
+});
+
+test('OVER_INVOICE_TOTAL: a printed invoice total below the proven lines caps the payout at that total', () => {
+  const result = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9), labour('2', 'Adam Kordecki', '2026-09-15', 9), labour('3', 'Adam Kordecki', '2026-09-16', 9)],
+    entries: [entry('Adam Kordecki', '2026-09-14', 9), entry('Adam Kordecki', '2026-09-15', 9), entry('Adam Kordecki', '2026-09-16', 9)],
+    invoice: { totalCents: 50000 },
+  });
+  assert.deepEqual(result.lines.map((line) => [line.verdict, line.payableCents]), [['PROVEN', 36900], ['OVER_INVOICE_TOTAL', 13100], ['OVER_INVOICE_TOTAL', 0]]);
+  assert.equal(result.totals.payableCents, 50000);
+  assert.match(byId(result, '2').reason, /The printed invoice total €500\.00 is below the €1,107\.00 the proven lines come to; €238\.00 of this line is not paid\./);
+  const mismatch = result.caseFindings.find((f) => f.code === 'INVOICE_TOTAL_MISMATCH');
+  assert.equal(mismatch.severity, 'warning');
+  assert.match(mismatch.reason, /No more than the printed total is paid\./);
+  const higher = run({ lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)], entries: [entry('Adam Kordecki', '2026-09-14', 9)], invoice: { totalCents: 99900 } });
+  assert.equal(higher.totals.payableCents, 36900, 'a printed total above the lines pays the lines');
+  assert.doesNotMatch(higher.caseFindings[0].reason, /No more than/);
 });
 
 test('no contract rate or a unit mismatch makes a line UNPROVEN', () => {

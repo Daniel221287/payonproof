@@ -19,6 +19,9 @@
  *  - The unit price is capped at the contract rate (RATE_ABOVE_CONTRACT).
  *  - The printed line total must equal quantity x price to the cent (MATH_ERROR);
  *    the payable amount is always recomputed: proven quantity x allowed rate.
+ *  - Never more than invoiced: a line pays at most its printed amount (work worth more is
+ *    reported as UNDERBILLED, not paid), and the case pays at most the printed invoice
+ *    total (OVER_INVOICE_TOTAL).
  *  - A contract payment cap limits the cumulative payable amount (OVER_CAP).
  */
 import { formatMoney, formatQuantity, isArithmeticallyConsistent, lineAmountCents } from './money.mjs';
@@ -27,11 +30,14 @@ import { codeKey, matchKey, signerMatches } from './normalize.mjs';
 export const ENGINE_VERSION = 'payonproof-verify/1.1';
 
 export const VERDICTS = Object.freeze([
-  'PROVEN', 'PARTIAL', 'UNPROVEN', 'UNSIGNED', 'DUPLICATE', 'ROLE_MISMATCH', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP',
+  'PROVEN', 'PARTIAL', 'UNPROVEN', 'UNSIGNED', 'DUPLICATE', 'ROLE_MISMATCH', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_INVOICE_TOTAL', 'OVER_CAP',
 ]);
 
 /** When a line has several findings, the first one in this list is its verdict. */
-const PRECEDENCE = ['DUPLICATE', 'UNPROVEN', 'UNSIGNED', 'ROLE_MISMATCH', 'PARTIAL', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP'];
+const PRECEDENCE = ['DUPLICATE', 'UNPROVEN', 'UNSIGNED', 'ROLE_MISMATCH', 'PARTIAL', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_INVOICE_TOTAL', 'OVER_CAP'];
+
+/** Findings that inform but never decide a verdict or reduce a payment. */
+export const INFORMATIONAL_FINDINGS = Object.freeze(['UNDERBILLED']);
 
 /**
  * @typedef {{code: string, reason: string, params?: object}} Finding
@@ -310,10 +316,19 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
         { writtenCents: line.lineTotalCents, correctCents });
     }
 
+    let provenValueCents = 0;
     let payableCents = 0;
     if (priceable && provenMilli > 0) {
       const exactlyAsInvoiced = provenMilli === line.quantityMilli && payRateCents === line.unitPriceCents && mathOk;
-      payableCents = exactlyAsInvoiced ? line.lineTotalCents : lineAmountCents(provenMilli, payRateCents);
+      provenValueCents = exactlyAsInvoiced ? line.lineTotalCents : lineAmountCents(provenMilli, payRateCents);
+      // Never more than the line as printed: proven work worth more is reported, not paid.
+      payableCents = Math.min(provenValueCents, line.lineTotalCents);
+      if (provenValueCents > line.lineTotalCents) {
+        const differenceCents = provenValueCents - line.lineTotalCents;
+        add('UNDERBILLED',
+          `Paid as printed (${money(line.lineTotalCents)}): the proven work comes to ${money(provenValueCents)}, so ${money(differenceCents)} more could be invoiced.`,
+          { writtenCents: line.lineTotalCents, provenCents: provenValueCents, differenceCents });
+      }
     }
 
     return {
@@ -335,11 +350,32 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
       payRateCents,
       claimedCents: line.lineTotalCents,
       correctCents,
+      provenValueCents,
       payableCents,
       findings,
       evidence: used,
     };
   });
+
+  // Never more than the printed invoice total: the lines that cross it are cut, in invoice order.
+  const linesPayableCents = lines.reduce((sum, line) => sum + line.payableCents, 0);
+  const printedTotal = invoice.totalCents;
+  const cappedAtPrinted = printedTotal !== null && printedTotal !== undefined && printedTotal < linesPayableCents;
+  if (cappedAtPrinted) {
+    let remainingTotal = printedTotal;
+    for (const line of lines) {
+      if (line.payableCents > remainingTotal) {
+        const cut = line.payableCents - remainingTotal;
+        line.payableCents = remainingTotal;
+        line.findings.push({
+          code: 'OVER_INVOICE_TOTAL',
+          reason: `The printed invoice total ${money(printedTotal)} is below the ${money(linesPayableCents)} the proven lines come to; ${money(cut)} of this line is not paid.`,
+          params: { totalCents: printedTotal, cutCents: cut },
+        });
+      }
+      remainingTotal -= line.payableCents;
+    }
+  }
 
   const cap = contract.paymentCapCents;
   if (cap !== null && cap !== undefined) {
@@ -358,28 +394,28 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
     }
   }
 
+  // Every line pays at most its claim, so claimed = payable + disputed holds per line and in total.
   let claimedCents = 0;
   let payableCents = 0;
   let disputedCents = 0;
-  let inFavourCents = 0;
   for (const line of lines) {
     line.verdict = PRECEDENCE.find((code) => line.findings.some((finding) => finding.code === code)) ?? 'PROVEN';
-    line.disputedCents = Math.max(0, line.claimedCents - line.payableCents);
-    line.inFavourCents = Math.max(0, line.payableCents - line.claimedCents);
+    line.disputedCents = line.claimedCents - line.payableCents;
     line.evidenceIds = line.evidence.map((item) => item.id);
-    line.reason = line.findings.length > 0
+    const decisive = line.findings.filter((finding) => !INFORMATIONAL_FINDINGS.includes(finding.code));
+    line.reason = decisive.length > 0
       ? line.findings.map((finding) => finding.reason).join(' ')
-      : `Proven: ${line.evidence.map((item) => `${item.id} (${item.detail})`).join('; ')}.`;
+      : [`Proven: ${line.evidence.map((item) => `${item.id} (${item.detail})`).join('; ')}.`, ...line.findings.map((finding) => finding.reason)].join(' ');
     claimedCents += line.claimedCents;
     payableCents += line.payableCents;
     disputedCents += line.disputedCents;
-    inFavourCents += line.inFavourCents;
   }
 
-  if (invoice.totalCents !== null && invoice.totalCents !== undefined && invoice.totalCents !== claimedCents) {
+  if (printedTotal !== null && printedTotal !== undefined && printedTotal !== claimedCents) {
     caseFindings.push({
       code: 'INVOICE_TOTAL_MISMATCH', severity: 'warning',
-      reason: `The printed invoice total ${money(invoice.totalCents)} differs from the sum of its lines ${money(claimedCents)}.`,
+      reason: `The printed invoice total ${money(printedTotal)} differs from the sum of its lines ${money(claimedCents)}.${cappedAtPrinted ? ' No more than the printed total is paid.' : ''}`,
+      params: { totalCents: printedTotal, linesCents: claimedCents, capped: cappedAtPrinted },
     });
   }
 
@@ -398,7 +434,6 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
       claimedCents,
       payableCents,
       disputedCents,
-      inFavourCents,
       lineCount: lines.length,
       provenLineCount: lines.filter((line) => line.verdict === 'PROVEN').length,
     },

@@ -9,6 +9,7 @@
  */
 import { AiError } from './ai.mjs';
 import { formatMoney, formatQuantity } from './money.mjs';
+import { INFORMATIONAL_FINDINGS } from './verify.mjs';
 
 export const LANGUAGE_NAMES = Object.freeze({ en: 'English', de: 'German', pl: 'Polish', uk: 'Ukrainian' });
 const LOCALES = { en: 'en-GB', de: 'de-DE', pl: 'pl-PL', uk: 'uk-UA' };
@@ -34,6 +35,7 @@ const PHRASES = {
       : `the rate ${invoiced} is above the contract rate ${contract}`),
     MATH_ERROR: ({ written, correct }) => `the line total ${written} should be ${correct}`,
     OVER_CAP: ({ cap }) => `it exceeds the contract payment cap of ${cap} per invoice`,
+    OVER_INVOICE_TOTAL: ({ total }) => `the invoice total ${total} is below the sum of the lines, so no more than ${total} is paid in total`,
   },
   de: {
     DUPLICATE: ({ duplicateOf }) => `doppelt berechnet (wie Pos. ${duplicateOf})`,
@@ -55,6 +57,7 @@ const PHRASES = {
       : `der Satz ${invoiced} liegt über dem Vertragssatz ${contract}`),
     MATH_ERROR: ({ written, correct }) => `der Positionsbetrag ${written} müsste ${correct} lauten`,
     OVER_CAP: ({ cap }) => `die vertragliche Zahlungsobergrenze von ${cap} je Rechnung ist überschritten`,
+    OVER_INVOICE_TOTAL: ({ total }) => `die Rechnungssumme ${total} liegt unter der Summe der Positionen, daher zahlen wir insgesamt höchstens ${total}`,
   },
   pl: {
     DUPLICATE: ({ duplicateOf }) => `pozycja zdublowana (jak poz. ${duplicateOf})`,
@@ -76,6 +79,7 @@ const PHRASES = {
       : `stawka ${invoiced} jest wyższa niż umowna ${contract}`),
     MATH_ERROR: ({ written, correct }) => `wartość pozycji ${written} powinna wynosić ${correct}`,
     OVER_CAP: ({ cap }) => `przekroczony umowny limit płatności ${cap} na fakturę`,
+    OVER_INVOICE_TOTAL: ({ total }) => `suma faktury ${total} jest niższa niż suma pozycji, dlatego płacimy łącznie najwyżej ${total}`,
   },
   uk: {
     DUPLICATE: ({ duplicateOf }) => `дублікат позиції ${duplicateOf}`,
@@ -97,6 +101,7 @@ const PHRASES = {
       : `ставка ${invoiced} вища за договірну ${contract}`),
     MATH_ERROR: ({ written, correct }) => `сума позиції ${written} має становити ${correct}`,
     OVER_CAP: ({ cap }) => `перевищено договірний ліміт оплати ${cap} за рахунок`,
+    OVER_INVOICE_TOTAL: ({ total }) => `загальна сума рахунку ${total} менша за суму позицій, тому загалом сплачуємо не більше ${total}`,
   },
 };
 
@@ -106,6 +111,9 @@ const BODIES = {
     full: (f) => `thank you for invoice ${f.invoiceNumber}. All ${f.lineCount} lines are confirmed by signed timesheets and delivery notes, so we are paying the full ${f.payable} by PayPal.`,
     partial: (f) => `thank you for invoice ${f.invoiceNumber}. We are paying ${f.payable} of the ${f.claimed} invoiced, by PayPal. The difference of ${f.disputed} comes from these lines:`,
     line: (l) => `- Line ${l.id} (${l.subject}, ${l.date}): invoiced ${l.claimed}, paid ${l.payable}. Reason: ${l.reasons}.`,
+    totalNote: (f) => `The invoice total ${f.totalNote.printed} does not match the sum of its lines ${f.claimed}; we checked the invoice line by line.`,
+    noteHeading: 'These lines are worth more than you invoiced. We pay them as invoiced; you may invoice the difference:',
+    noteLine: (l) => `- Line ${l.id} (${l.subject}, ${l.date}): invoiced ${l.written}, proven ${l.proven}, difference ${l.difference}.`,
     closing: 'If you have documents that prove these items, for example a signed timesheet or a delivery note, please send them and we will review the lines again.',
     signoff: (f) => `Kind regards,\nAccounts payable, ${f.mainContractor}`,
   },
@@ -114,6 +122,9 @@ const BODIES = {
     full: (f) => `vielen Dank für die Rechnung ${f.invoiceNumber}. Alle ${f.lineCount} Positionen sind durch unterschriebene Stundenzettel und Lieferscheine belegt. Wir zahlen den vollen Betrag von ${f.payable} per PayPal.`,
     partial: (f) => `vielen Dank für die Rechnung ${f.invoiceNumber}. Wir zahlen ${f.payable} der berechneten ${f.claimed} per PayPal. Die Differenz von ${f.disputed} betrifft folgende Positionen:`,
     line: (l) => `- Pos. ${l.id} (${l.subject}, ${l.date}): berechnet ${l.claimed}, gezahlt ${l.payable}. Grund: ${l.reasons}.`,
+    totalNote: (f) => `Die Rechnungssumme ${f.totalNote.printed} stimmt nicht mit der Summe der Positionen ${f.claimed} überein; wir haben die Rechnung Position für Position geprüft.`,
+    noteHeading: 'Diese Positionen sind mehr wert als berechnet. Wir zahlen sie wie berechnet; die Differenz können Sie nachberechnen:',
+    noteLine: (l) => `- Pos. ${l.id} (${l.subject}, ${l.date}): berechnet ${l.written}, nachgewiesen ${l.proven}, Differenz ${l.difference}.`,
     closing: 'Wenn Sie Nachweise zu diesen Positionen haben, zum Beispiel einen unterschriebenen Stundenzettel oder einen Lieferschein, senden Sie uns diese bitte. Wir prüfen die Positionen dann erneut.',
     signoff: (f) => `Mit freundlichen Grüßen\nKreditorenbuchhaltung, ${f.mainContractor}`,
   },
@@ -122,6 +133,9 @@ const BODIES = {
     full: (f) => `dziękujemy za fakturę ${f.invoiceNumber}. Wszystkie pozycje (${f.lineCount}) są potwierdzone podpisanymi kartami pracy i dokumentami dostawy, dlatego płacimy pełną kwotę ${f.payable} przez PayPal.`,
     partial: (f) => `dziękujemy za fakturę ${f.invoiceNumber}. Płacimy ${f.payable} z zafakturowanych ${f.claimed} przez PayPal. Różnica ${f.disputed} dotyczy następujących pozycji:`,
     line: (l) => `- Poz. ${l.id} (${l.subject}, ${l.date}): zafakturowano ${l.claimed}, zapłacono ${l.payable}. Powód: ${l.reasons}.`,
+    totalNote: (f) => `Suma faktury ${f.totalNote.printed} nie zgadza się z sumą pozycji ${f.claimed}; sprawdziliśmy fakturę pozycja po pozycji.`,
+    noteHeading: 'Te pozycje są warte więcej, niż Państwo zafakturowali. Płacimy kwoty z faktury; różnicę mogą Państwo zafakturować osobno:',
+    noteLine: (l) => `- Poz. ${l.id} (${l.subject}, ${l.date}): zafakturowano ${l.written}, potwierdzono ${l.proven}, różnica ${l.difference}.`,
     closing: 'Jeśli mają Państwo dokumenty potwierdzające te pozycje, na przykład podpisaną kartę pracy lub dokument dostawy, prosimy o ich przesłanie. Wtedy ponownie sprawdzimy te pozycje.',
     signoff: (f) => `Z poważaniem\nDział księgowości, ${f.mainContractor}`,
   },
@@ -130,6 +144,9 @@ const BODIES = {
     full: (f) => `дякуємо за рахунок ${f.invoiceNumber}. Усі позиції (${f.lineCount}) підтверджені підписаними табелями та накладними, тому ми сплачуємо повну суму ${f.payable} через PayPal.`,
     partial: (f) => `дякуємо за рахунок ${f.invoiceNumber}. Ми сплачуємо ${f.payable} із виставлених ${f.claimed} через PayPal. Різниця ${f.disputed} стосується таких позицій:`,
     line: (l) => `- Позиція ${l.id} (${l.subject}, ${l.date}): виставлено ${l.claimed}, сплачено ${l.payable}. Причина: ${l.reasons}.`,
+    totalNote: (f) => `Загальна сума рахунку ${f.totalNote.printed} не збігається із сумою позицій ${f.claimed}; ми перевірили рахунок попозиційно.`,
+    noteHeading: 'Ці позиції коштують більше, ніж ви виставили. Ми сплачуємо їх за сумами з рахунку; різницю ви можете виставити окремо:',
+    noteLine: (l) => `- Позиція ${l.id} (${l.subject}, ${l.date}): виставлено ${l.written}, підтверджено ${l.proven}, різниця ${l.difference}.`,
     closing: 'Якщо у вас є документи, що підтверджують ці позиції, наприклад підписаний табель або накладна, надішліть їх, будь ласка, і ми повторно перевіримо ці позиції.',
     signoff: (f) => `З повагою\nБухгалтерія, ${f.mainContractor}`,
   },
@@ -162,7 +179,7 @@ export function buildMessageFacts({ contract, invoice, verification }) {
       date: date(line.date),
       claimed: money(line.claimedCents),
       payable: money(line.payableCents),
-      reasons: line.findings.map((finding) => phrases[phraseKey(finding, line.kind)]({
+      reasons: line.findings.filter((finding) => !INFORMATIONAL_FINDINGS.includes(finding.code)).map((finding) => phrases[phraseKey(finding, line.kind)]({
         duplicateOf: finding.params?.duplicateOf,
         proven: qty(finding.params?.provenMilli ?? 0),
         claimed: qty(finding.params?.claimedMilli ?? 0),
@@ -178,8 +195,24 @@ export function buildMessageFacts({ contract, invoice, verification }) {
         evidencedRole: finding.params?.evidencedRole ?? null,
         evidencedRate: money(finding.params?.evidencedRateCents ?? 0),
         rateApplied: Boolean(finding.params?.rateApplied),
+        total: money(finding.params?.totalCents ?? 0),
       })).join('; '),
     }));
+  // Lines whose proven work is worth more than their printed amount: paid as printed, never more.
+  const noteLines = verification.lines.flatMap((line) => line.findings
+    .filter((finding) => finding.code === 'UNDERBILLED')
+    .map((finding) => ({
+      id: line.id,
+      subject: line.subject,
+      date: date(line.date),
+      written: money(finding.params.writtenCents),
+      proven: money(finding.params.provenCents),
+      difference: money(finding.params.differenceCents),
+    })));
+  const printedTotal = invoice.totalCents;
+  const totalNote = printedTotal !== null && printedTotal !== undefined && printedTotal !== verification.totals.claimedCents
+    ? { printed: money(printedTotal) }
+    : null;
   return {
     language,
     languageName: LANGUAGE_NAMES[language],
@@ -191,6 +224,8 @@ export function buildMessageFacts({ contract, invoice, verification }) {
     payable: money(verification.totals.payableCents),
     disputed: money(verification.totals.disputedCents),
     disputedLines,
+    noteLines,
+    totalNote,
   };
 }
 
@@ -205,8 +240,11 @@ export function templateMessage(facts) {
   if (facts.disputedLines.length === 0) {
     parts.push(body.full(facts));
   } else {
-    parts.push(body.partial(facts), '', ...facts.disputedLines.map((line) => body.line(line)), '', body.closing);
+    parts.push(body.partial(facts), '', ...facts.disputedLines.map((line) => body.line(line)));
   }
+  if (facts.totalNote) parts.push('', body.totalNote(facts));
+  if (facts.noteLines?.length) parts.push('', body.noteHeading, ...facts.noteLines.map((line) => body.noteLine(line)));
+  if (facts.disputedLines.length > 0) parts.push('', body.closing);
   parts.push('', body.signoff(facts));
   return parts.join('\n');
 }
@@ -226,12 +264,17 @@ export function factCheckMessage(text, facts) {
   if (body.length > 3000) missing.push('a message under 3000 characters');
   if (!body.includes(squash(facts.payable))) missing.push(`payable total ${facts.payable}`);
   if (facts.disputedLines.length > 0 && !body.includes(squash(facts.claimed))) missing.push(`invoiced total ${facts.claimed}`);
+  // The id must follow a word such as "Line", "Pos.", "poz." or "Позиція" ("€5,035" is not line 5).
+  const mentions = (id) => new RegExp(`(?:^|[^\\p{L}\\p{N}])(?:\\p{L}{2,}\\.?|#)\\s?${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u').test(body);
   for (const line of facts.disputedLines) {
-    // The id must follow a word such as "Line", "Pos.", "poz." or "Позиція" ("€5,035" is not line 5).
-    const idPattern = new RegExp(`(?:^|[^\\p{L}\\p{N}])(?:\\p{L}{2,}\\.?|#)\\s?${line.id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'u');
-    if (!idPattern.test(body)) missing.push(`line ${line.id}`);
+    if (!mentions(line.id)) missing.push(`line ${line.id}`);
     if (!body.includes(squash(line.payable))) missing.push(`paid amount ${line.payable} of line ${line.id}`);
   }
+  for (const line of facts.noteLines ?? []) {
+    if (!mentions(line.id)) missing.push(`line ${line.id}`);
+    if (!body.includes(squash(line.difference))) missing.push(`difference ${line.difference} of line ${line.id} that may be invoiced`);
+  }
+  if (facts.totalNote && !body.includes(squash(facts.totalNote.printed))) missing.push(`printed invoice total ${facts.totalNote.printed}`);
   return missing;
 }
 
@@ -250,6 +293,8 @@ export async function draftMessage({ provider, facts }) {
     `Write in ${facts.languageName}. Be polite, plain and concrete. At most 170 words. No subject line.`,
     'Use only the facts in the JSON. Copy every amount exactly as written there, including currency symbols.',
     'Mention every disputed line by its line number, with its invoiced and paid amounts and its reasons.',
+    'Mention every line in noteLines by its line number: it is paid as invoiced, and the subcontractor may invoice the difference shown.',
+    'If totalNote is present, say that the invoice total it shows does not match the sum of the lines.',
     'Do not add facts, promises, deadlines, threats or legal claims.',
     'Answer with JSON only: {"message": "<the message text>"}',
   ].join('\n');

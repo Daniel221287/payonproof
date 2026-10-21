@@ -72,6 +72,7 @@
     ROLE_MISMATCH: { label: 'Trade differs', tone: 'warn', icon: 'swap' },
     RATE_ABOVE_CONTRACT: { label: 'Rate capped', tone: 'warn', icon: 'down' },
     MATH_ERROR: { label: 'Math error', tone: 'warn', icon: 'noteq' },
+    OVER_INVOICE_TOTAL: { label: 'Over total', tone: 'warn', icon: 'cap' },
     OVER_CAP: { label: 'Over cap', tone: 'warn', icon: 'cap' },
     UNSIGNED: { label: 'Unsigned', tone: 'bad', icon: 'pen' },
     UNPROVEN: { label: 'Unproven', tone: 'bad', icon: 'empty' },
@@ -407,11 +408,12 @@
     gridWrap.hidden = false;
     const t = v.totals;
     const paidLines = v.lines.filter((line) => line.payableCents > 0).length;
+    const fullLines = v.lines.filter((line) => line.payableCents === line.claimedCents).length;
     const heldLines = v.lines.filter((line) => line.disputedCents > 0).length;
     $('#sum-claimed').textContent = money(t.claimedCents);
     $('#sum-claimed-note').textContent = `${t.lineCount} invoice lines`;
     $('#sum-payable').textContent = money(t.payableCents);
-    $('#sum-payable-note').textContent = `${paidLines} of ${t.lineCount} lines paid, ${t.provenLineCount} in full`;
+    $('#sum-payable-note').textContent = `${paidLines} of ${t.lineCount} lines paid, ${fullLines} in full`;
     $('#sum-disputed').textContent = money(t.disputedCents);
     $('#sum-disputed-note').textContent = heldLines ? `${heldLines} line${heldLines === 1 ? '' : 's'} held back` : 'Nothing held back';
     const share = t.claimedCents > 0 ? Math.min(1, t.payableCents / t.claimedCents) : 0;
@@ -551,9 +553,13 @@
     if (node && !node.isSelected()) node.setSelected(true, true);
     const what = line.kind === 'labour' ? roleText(line) : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
     const invoiced = `${qty(line.claimedQtyMilli)} ${line.unit} × ${money(line.unitPriceCents)} printed as ${money(line.claimedCents)}`;
-    const payable = line.payableCents === 0
-      ? `${money(0)}`
-      : `${qty(line.provenQtyMilli)} ${line.unit} × ${money(line.payRateCents)} gives ${money(line.payableCents)}`;
+    const product = `${qty(line.provenQtyMilli)} ${line.unit} × ${money(line.payRateCents)}`;
+    let payable = money(line.payableCents);
+    if (line.provenQtyMilli > 0) {
+      payable = line.provenValueCents === line.payableCents
+        ? `${product} gives ${money(line.payableCents)}`
+        : `${product} comes to ${money(line.provenValueCents)}; ${money(line.payableCents)} is paid (see why)`;
+    }
     box.replaceChildren(
       h('div', { class: 'inspector-head' }, h('h3', { text: `Line ${line.id}: ${line.subject}` }), verdictBadge(line.verdict)),
       h('p', { class: 'cell-muted', text: `${what}, ${longDate(line.date)}` }),
