@@ -62,9 +62,15 @@ test('offline drafting is labelled as a template, never as AI', async () => {
 test('an AI draft that keeps every fact is used and labelled as AI', async () => {
   const facts = await factsFor('rate-drift');
   const good = templateMessage(facts).replace('Шановні партнери,', 'Добрий день,');
-  const draft = await draftMessage({ provider: fakeAi(good), facts });
+  const requests = [];
+  const provider = { ...fakeAi(good), async generateJson(request) { requests.push(request); return { json: { message: good } }; } };
+  const draft = await draftMessage({ provider, facts });
   assert.equal(draft.source, 'ai');
   assert.match(draft.label, /AI draft, fact-checked/);
+  assert.deepEqual(requests[0].schema, {
+    name: 'payment_message',
+    schema: { type: 'object', additionalProperties: false, properties: { message: { type: 'string' } }, required: ['message'] },
+  }, 'structured output: one string, nothing else');
 });
 
 test('an AI draft that drops or changes a fact is replaced by the template', async () => {

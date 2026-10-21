@@ -95,6 +95,8 @@
   function qty(milli) {
     return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(milli / 1000);
   }
+  // How the model was asked to answer (shown next to "Read by").
+  const OUTPUT_FORMATS = { json_schema: 'JSON Schema enforced', json_object: 'JSON mode', text: 'plain-text answer', mixed: 'mixed answer formats' };
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function shortDate(iso) {
     if (!iso) return '';
@@ -394,7 +396,7 @@
       cell('Contract', c.contract?.contractId, c.contract?.paymentCapCents != null ? `cap ${money(c.contract.paymentCapCents)} per invoice` : null),
       cell('Payee (PayPal)', c.contract ? emailNode(c.contract.payeeEmail) : null, 'taken from the contract, never from the invoice'),
       cell('Message language', c.contract?.languageName ?? null),
-      cell('Read by', c.extraction.label, `${c.extraction.durationMs} ms${c.extraction.cached ? ', cached result' : ''}, input SHA-256 ${c.extraction.inputSha256.slice(0, 12)}…`),
+      cell('Read by', c.extraction.label, `${OUTPUT_FORMATS[c.extraction.outputFormat] ? `${OUTPUT_FORMATS[c.extraction.outputFormat]}, ` : ''}${c.extraction.durationMs} ms${c.extraction.cached ? ', cached result' : ''}, input SHA-256 ${c.extraction.inputSha256.slice(0, 12)}…`),
     );
 
     const unreadable = c.unreadable ?? [];

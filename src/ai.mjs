@@ -70,6 +70,7 @@ export function resolveAiConfig(env) {
       baseUrl: url.href.replace(/\/+$/, ''),
       apiKey: env.NEBIUS_API_KEY,
       jsonMode: env.AI_JSON_MODE !== '0',
+      jsonSchema: env.AI_JSON_SCHEMA !== '0',
       reasoning,
       timeoutMs,
     };
@@ -96,6 +97,7 @@ export function resolveAiConfig(env) {
       baseUrl: env.AI_BASE_URL.replace(/\/+$/, ''),
       apiKey: env.AI_API_KEY || '',
       jsonMode: env.AI_JSON_MODE !== '0',
+      jsonSchema: env.AI_JSON_SCHEMA !== '0',
       timeoutMs,
     };
   }
@@ -194,34 +196,52 @@ async function callGemini(fetchImpl, config, { system, user }) {
     text,
     model: json.modelVersion ?? config.model,
     usage: { inputTokens: json.usageMetadata?.promptTokenCount ?? null, outputTokens: json.usageMetadata?.candidatesTokenCount ?? null },
+    outputFormat: 'json_object',
   };
 }
 
-async function callOpenAi(fetchImpl, config, state, { system, user }) {
+/**
+ * How to ask for the answer: the document's JSON Schema as structured output when the request has one,
+ * JSON mode otherwise, plain text when the endpoint refused both. A refusal is remembered per provider.
+ */
+function answerMode(state, schema) {
+  if (!state.jsonMode) return 'text';
+  return schema && state.schemaMode !== false ? 'json_schema' : 'json_object';
+}
+
+function responseFormat(mode, schema) {
+  if (mode === 'json_schema') return { type: 'json_schema', json_schema: { name: schema.name, schema: schema.schema, strict: true } };
+  if (mode === 'json_object') return { type: 'json_object' };
+  return null;
+}
+
+async function callOpenAi(fetchImpl, config, state, { system, user, schema }) {
   const url = `${config.baseUrl}/chat/completions`;
-  const attempt = async (jsonMode) => {
+  const sendsTemplateKwargs = () => config.provider === 'nebius' && config.reasoning === 'off' && state.templateKwargs !== false;
+  const attempt = async (mode) => {
+    const format = responseFormat(mode, schema);
     const body = {
       model: config.model,
       temperature: 0,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      ...(format ? { response_format: format } : {}),
       // Nemotron on Token Factory: answer without the hidden reasoning pass (about 2x faster, 3x fewer tokens).
-      ...(config.provider === 'nebius' && config.reasoning === 'off' && state.templateKwargs !== false
-        ? { chat_template_kwargs: { enable_thinking: false } } : {}),
+      ...(sendsTemplateKwargs() ? { chat_template_kwargs: { enable_thinking: false } } : {}),
     };
     const headers = { 'content-type': 'application/json' };
     if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
     const response = await send(fetchImpl, url, { method: 'POST', headers, body: JSON.stringify(body) }, config.timeoutMs, 'The AI endpoint');
-    return { response, ...(await readBody(response)) };
+    return { response, mode, ...(await readBody(response)) };
   };
-  let result = await attempt(state.jsonMode);
-  if (!result.response.ok && result.response.status === 400 && state.templateKwargs !== false && /chat_template_kwargs|enable_thinking/i.test(result.text)) {
-    state.templateKwargs = false;
-    result = await attempt(state.jsonMode);
-  }
-  if (!result.response.ok && state.jsonMode && result.response.status === 400 && /response_format|json_object|json mode/i.test(result.text)) {
-    state.jsonMode = false;
-    result = await attempt(false);
+  let result = await attempt(answerMode(state, schema));
+  // An endpoint that rejects an optional request feature gets the request again without it:
+  // first the reasoning switch, then structured output (JSON mode instead), then JSON mode itself.
+  for (let tries = 0; tries < 3 && !result.response.ok && result.response.status === 400; tries += 1) {
+    if (sendsTemplateKwargs() && /chat_template_kwargs|enable_thinking/i.test(result.text)) state.templateKwargs = false;
+    else if (result.mode === 'json_schema' && /json_schema|response_format|schema|guided/i.test(result.text)) state.schemaMode = false;
+    else if (result.mode === 'json_object' && /response_format|json_object|json mode/i.test(result.text)) state.jsonMode = false;
+    else break;
+    result = await attempt(answerMode(state, schema));
   }
   const { response, json, text } = result;
   if (!response.ok) {
@@ -237,6 +257,7 @@ async function callOpenAi(fetchImpl, config, state, { system, user }) {
     text: typeof choice.message?.content === 'string' ? choice.message.content : '',
     model: json.model ?? config.model,
     usage: { inputTokens: json.usage?.prompt_tokens ?? null, outputTokens: json.usage?.completion_tokens ?? null },
+    outputFormat: result.mode,
   };
 }
 
@@ -257,7 +278,7 @@ export function createAiProvider(config, { fetch: fetchImpl = globalThis.fetch, 
       },
     };
   }
-  const state = { jsonMode: config.jsonMode !== false };
+  const state = { jsonMode: config.jsonMode !== false, schemaMode: config.jsonSchema === false ? false : undefined };
   const call = config.provider === 'gemini'
     ? (request) => callGemini(fetchImpl, config, request)
     : (request) => callOpenAi(fetchImpl, config, state, request);
@@ -272,8 +293,8 @@ export function createAiProvider(config, { fetch: fetchImpl = globalThis.fetch, 
     isAI: true,
     label,
     /**
-     * @param {{system: string, user: string}} request
-     * @returns {Promise<{json: object, text: string, model: string, usage: object}>}
+     * @param {{system: string, user: string, schema?: {name: string, schema: object}}} request
+     * @returns {Promise<{json: object, text: string, model: string, usage: object, outputFormat: string}>}
      */
     async generateJson(request) {
       let output;

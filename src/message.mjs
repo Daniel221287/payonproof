@@ -280,6 +280,12 @@ export function factCheckMessage(text, facts) {
   return missing;
 }
 
+// Structured output for the draft: one string, nothing else.
+const MESSAGE_SCHEMA = Object.freeze({
+  name: 'payment_message',
+  schema: { type: 'object', additionalProperties: false, properties: { message: { type: 'string' } }, required: ['message'] },
+});
+
 /**
  * Draft the message: AI phrasing when available (fact-checked), template otherwise.
  * @param {{provider: object, facts: ReturnType<typeof buildMessageFacts>}} input
@@ -301,7 +307,7 @@ export async function draftMessage({ provider, facts }) {
     'Answer with JSON only: {"message": "<the message text>"}',
   ].join('\n');
   try {
-    const output = await provider.generateJson({ system, user: JSON.stringify(facts) });
+    const output = await provider.generateJson({ system, user: JSON.stringify(facts), schema: MESSAGE_SCHEMA });
     const text = typeof output.json.message === 'string' ? output.json.message.trim() : '';
     const missing = factCheckMessage(text, facts);
     if (missing.length === 0) {

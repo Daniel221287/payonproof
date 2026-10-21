@@ -278,6 +278,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         isAI: record.extraction.isAI,
         label: record.extraction.label,
         promptVersion: record.extraction.promptVersion,
+        outputFormat: record.extraction.outputFormat ?? null,
         fallback: record.extraction.fallback ?? null,
         startedAt: record.extraction.startedAt,
         durationMs: record.extraction.durationMs,

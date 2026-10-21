@@ -12,7 +12,7 @@ import { canonicalJson, sha256Hex } from './canonical.mjs';
 import { NOT_SAMPLE, OfflineParseError, parseOffline } from './offline-parser.mjs';
 import { DOCUMENT_TYPES, validateExtraction } from './schema.mjs';
 
-export const PROMPT_VERSION = 'extract-v2';
+export const PROMPT_VERSION = 'extract-v3';
 
 const COMMON_RULES = [
   'You extract data from ONE construction document into JSON for an accounts-payable check.',
@@ -55,6 +55,41 @@ const SHAPES = {
 }`,
 };
 
+// JSON Schemas for structured output (response_format json_schema on Nebius Token Factory and other
+// OpenAI-compatible endpoints). They pin the keys, the types and the two line kinds, so a decoding slip
+// such as "labbour" cannot reach the validator. Every value may still be null: a value that is not printed
+// stays null and the validator in schema.mjs rejects the document, instead of the model being forced to
+// invent a number. The validator still checks every value.
+const NULLABLE_STRING = { type: ['string', 'null'] };
+const NULLABLE_NUMBER = { type: ['number', 'null'] };
+const KIND = { enum: ['labour', 'material', null] };
+const objectOf = (properties) => ({ type: 'object', additionalProperties: false, properties, required: Object.keys(properties) });
+const listOf = (properties) => ({ type: 'array', items: objectOf(properties) });
+
+export const OUTPUT_SCHEMAS = Object.freeze({
+  contract: objectOf({
+    contractId: NULLABLE_STRING, mainContractor: NULLABLE_STRING, subcontractor: NULLABLE_STRING, payeeEmail: NULLABLE_STRING,
+    currency: NULLABLE_STRING, language: NULLABLE_STRING, paymentCap: NULLABLE_NUMBER,
+    rates: listOf({ kind: KIND, name: NULLABLE_STRING, aliases: { type: 'array', items: { type: 'string' } }, code: NULLABLE_STRING, unit: NULLABLE_STRING, price: NULLABLE_NUMBER }),
+  }),
+  invoice: objectOf({
+    invoiceNumber: NULLABLE_STRING, issuer: NULLABLE_STRING, issueDate: NULLABLE_STRING, contractRef: NULLABLE_STRING,
+    currency: NULLABLE_STRING, payeeEmail: NULLABLE_STRING,
+    lines: listOf({
+      id: NULLABLE_STRING, kind: KIND, worker: NULLABLE_STRING, role: NULLABLE_STRING, item: NULLABLE_STRING, itemCode: NULLABLE_STRING,
+      date: NULLABLE_STRING, quantity: NULLABLE_NUMBER, unit: NULLABLE_STRING, unitPrice: NULLABLE_NUMBER, lineTotal: NULLABLE_NUMBER,
+    }),
+    total: NULLABLE_NUMBER,
+  }),
+  timesheet: objectOf({
+    sheetRef: NULLABLE_STRING, siteManager: NULLABLE_STRING,
+    entries: listOf({ ref: NULLABLE_STRING, worker: NULLABLE_STRING, role: NULLABLE_STRING, date: NULLABLE_STRING, hours: NULLABLE_NUMBER, signed: { type: ['boolean', 'null'] }, signedBy: NULLABLE_STRING }),
+  }),
+  delivery_notes: objectOf({
+    notes: listOf({ ref: NULLABLE_STRING, item: NULLABLE_STRING, itemCode: NULLABLE_STRING, quantity: NULLABLE_NUMBER, unit: NULLABLE_STRING, date: NULLABLE_STRING, receivedBy: NULLABLE_STRING }),
+  }),
+});
+
 const TYPE_NAMES = {
   contract: 'subcontract rate sheet (contract)',
   invoice: 'subcontractor invoice',
@@ -66,12 +101,13 @@ const TYPE_NAMES = {
  * Build the extraction prompt for a document type.
  * @param {string} type
  * @param {string} text
- * @returns {{system: string, user: string}}
+ * @returns {{system: string, user: string, schema: {name: string, schema: object}}}
  */
 export function buildExtractionPrompt(type, text) {
   return {
     system: `${COMMON_RULES}\n\nDocument type: ${TYPE_NAMES[type]}.\nReturn this JSON shape:\n${SHAPES[type]}`,
     user: `<document>\n${text}\n</document>`,
+    schema: { name: type, schema: OUTPUT_SCHEMAS[type] },
   };
 }
 
@@ -89,11 +125,13 @@ async function extractOne(doc, provider, clock) {
   const base = { id: doc.id, name: doc.name, type: doc.type };
   let raw;
   let usage = null;
+  let outputFormat = null;
   try {
     if (provider.isAI) {
       const output = await provider.generateJson(buildExtractionPrompt(doc.type, doc.text));
       raw = output.json;
       usage = output.usage ?? null;
+      outputFormat = output.outputFormat ?? null;
     } else {
       raw = parseOffline(doc.type, doc.text);
     }
@@ -106,7 +144,7 @@ async function extractOne(doc, provider, clock) {
       return {
         ...base, status: 'rejected', errors: [{ path: '$', message }], warnings: [], data: null,
         errorCode: error instanceof AiError ? error.code : 'OFFLINE_PARSE', errorStatus: error.status ?? null,
-        durationMs: Math.round(clock() - started), usage,
+        durationMs: Math.round(clock() - started), usage, outputFormat,
       };
     }
     throw error;
@@ -120,6 +158,7 @@ async function extractOne(doc, provider, clock) {
     data: result.data,
     durationMs: Math.round(clock() - started),
     usage,
+    outputFormat,
   };
 }
 
@@ -146,6 +185,17 @@ export function createExtractionCache(limit = 100) {
 }
 
 /**
+ * How the model was asked to answer, for the provenance line: "json_schema" (structured output, the
+ * schema was enforced), "json_object" (JSON mode), "text", "mixed", or null without a model answer.
+ * @param {Array<{outputFormat?: string|null}>} results
+ */
+function summarizeOutputFormat(results) {
+  const formats = [...new Set(results.map((doc) => doc.outputFormat).filter(Boolean))];
+  if (formats.length === 0) return null;
+  return formats.length === 1 ? formats[0] : 'mixed';
+}
+
+/**
  * Extract and validate every document of a case.
  * @param {Array<{id: string, name: string, type: string, text: string}>} documents
  * @param {{provider: object, cache?: ReturnType<typeof createExtractionCache>, clock?: () => number, now?: () => number}} options
@@ -167,6 +217,7 @@ export async function extractDocuments(documents, { provider, cache, clock = () 
     isAI: provider.isAI,
     label: provider.label,
     promptVersion: provider.isAI ? PROMPT_VERSION : null,
+    outputFormat: summarizeOutputFormat(results),
     startedAt,
     durationMs: Math.round(clock() - started),
     inputSha256,

@@ -162,6 +162,55 @@ test('Nebius reasoning switch: off by default sends enable_thinking=false, on se
   assert.equal(rejecting.calls[1].body.chat_template_kwargs, undefined, 'retried without it');
 });
 
+test('structured output: a request with a schema sends it as strict json_schema; a refusal falls back to JSON mode and is remembered', async () => {
+  const NKEY = 'test-nebius-key-777777';
+  const SCHEMA = { name: 'invoice', schema: { type: 'object', additionalProperties: false, properties: { kind: { enum: ['labour', 'material', null] } }, required: ['kind'] } };
+  const ok = () => ({ body: { model: 'm', choices: [{ message: { content: '{"kind":"labour"}' }, finish_reason: 'stop' }] } });
+
+  const nebius = scriptedFetch([ok(), ok()]);
+  const provider = createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: nebius.fetch });
+  const output = await provider.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.deepEqual(nebius.calls[0].body.response_format, { type: 'json_schema', json_schema: { name: 'invoice', schema: SCHEMA.schema, strict: true } });
+  assert.equal(output.outputFormat, 'json_schema');
+  assert.deepEqual(output.json, { kind: 'labour' });
+  const plain = await provider.generateJson({ system: 'S', user: 'U' });
+  assert.deepEqual(nebius.calls[1].body.response_format, { type: 'json_object' }, 'no schema: JSON mode');
+  assert.equal(plain.outputFormat, 'json_object');
+
+  const refusing = scriptedFetch([{ status: 400, body: { error: { message: 'response_format json_schema is not supported for this model' } } }, ok(), ok()]);
+  const fallback = createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: refusing.fetch });
+  const first = await fallback.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.deepEqual(refusing.calls[1].body.response_format, { type: 'json_object' });
+  assert.equal(first.outputFormat, 'json_object');
+  await fallback.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(refusing.calls.length, 3, 'the refusal is remembered: no second json_schema attempt');
+  assert.deepEqual(refusing.calls[2].body.response_format, { type: 'json_object' });
+
+  const both = scriptedFetch([
+    { status: 400, body: { error: { message: 'Unsupported response_format type json_schema' } } },
+    { status: 400, body: { error: { message: 'Unrecognized request argument supplied: response_format' } } },
+    ok(),
+  ]);
+  const local = createAiProvider(resolveAiConfig({ AI_PROVIDER: 'openai', AI_BASE_URL: 'http://127.0.0.1:11434/v1', AI_MODEL: 'x' }), { fetch: both.fetch });
+  const text = await local.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(both.calls[0].body.response_format.type, 'json_schema', 'OpenAI-compatible endpoints get the schema too');
+  assert.equal(both.calls[2].body.response_format, undefined, 'then plain text');
+  assert.equal(text.outputFormat, 'text');
+
+  const switched = scriptedFetch([ok()]);
+  await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY, AI_JSON_SCHEMA: '0' }), { fetch: switched.fetch }).generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.deepEqual(switched.calls[0].body.response_format, { type: 'json_object' }, 'AI_JSON_SCHEMA=0 keeps JSON mode only');
+
+  const other = scriptedFetch([{ status: 400, body: { error: { message: 'messages: too many tokens' } } }]);
+  await assert.rejects(createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: other.fetch }).generateJson({ system: 'S', user: 'U', schema: SCHEMA }), /HTTP 400/);
+  assert.equal(other.calls.length, 1, 'an unrelated 400 is not retried');
+
+  const gemini = scriptedFetch([geminiOk('{"kind":"labour"}')]);
+  const g = await createAiProvider(resolveAiConfig({ GEMINI_API_KEY: KEY }), { fetch: gemini.fetch }).generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(g.outputFormat, 'json_object');
+  assert.deepEqual(gemini.calls[0].body.generationConfig, { responseMimeType: 'application/json', temperature: 0 }, 'Gemini keeps JSON mode');
+});
+
 test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
   assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
   assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });
