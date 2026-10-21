@@ -29,7 +29,7 @@ test('provider selection: offline by default, gemini with a key, openai with a b
   assert.equal(resolveAiConfig({ AI_PROVIDER: 'offline', GEMINI_API_KEY: KEY }).provider, 'offline');
   assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'gemini' }), AiConfigError);
   assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'openai', AI_BASE_URL: 'ftp://x', AI_MODEL: 'm' }), /http or https/);
-  assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'magic' }), /gemini, openai or offline/);
+  assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'magic' }), /nebius, gemini, openai or offline/);
 });
 
 test('the offline provider is labelled as no AI and cannot generate', async () => {
@@ -103,6 +103,51 @@ test('OpenAI-compatible: chat completions with JSON mode, bearer key, fallback w
   assert.deepEqual(calls[0].body.messages, [{ role: 'system', content: 'S' }, { role: 'user', content: 'U' }]);
   assert.equal(calls[1].body.response_format, undefined, 'retried without JSON mode');
   assert.match(provider.label, /OpenAI-compatible endpoint \(llama3\.1 at 127\.0\.0\.1:11434\)/);
+});
+
+test('Nebius Token Factory: NVIDIA Nemotron by default, OpenAI-compatible call, key only in the header', async () => {
+  const NKEY = 'test-nebius-key-987654';
+  const config = resolveAiConfig({ NEBIUS_API_KEY: NKEY });
+  assert.equal(config.provider, 'nebius');
+  assert.equal(config.baseUrl, 'https://api.tokenfactory.nebius.com/v1');
+  assert.equal(config.model, 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B');
+  assert.equal(resolveAiConfig({ NEBIUS_API_KEY: NKEY, GEMINI_API_KEY: KEY }).provider, 'nebius');
+  assert.equal(resolveAiConfig({ AI_PROVIDER: 'gemini', NEBIUS_API_KEY: NKEY, GEMINI_API_KEY: KEY }).provider, 'gemini');
+  assert.equal(resolveAiConfig({ AI_PROVIDER: 'offline', NEBIUS_API_KEY: NKEY }).provider, 'offline');
+  assert.equal(resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_MODEL: 'nvidia/Nemotron-3_5-Lightning' }).model, 'nvidia/Nemotron-3_5-Lightning');
+  assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'nebius' }), /NEBIUS_API_KEY/);
+  assert.throws(() => resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_BASE_URL: 'http://api.tokenfactory.nebius.com/v1' }), /https/);
+  assert.throws(() => resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_MODEL: 'nvidia/x y' }), /unexpected characters/);
+
+  const ok = scriptedFetch([{ body: {
+    model: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B',
+    choices: [{ message: { content: '<think>Line 3 has {hours} to check.</think>\n{"lines": []}' }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 50, completion_tokens: 20 },
+  } }]);
+  const provider = createAiProvider(config, { fetch: ok.fetch });
+  assert.equal(provider.isAI, true);
+  assert.equal(provider.label, 'Nebius Token Factory (nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B)');
+  const output = await provider.generateJson({ system: 'S', user: 'U' });
+  assert.deepEqual(output.json, { lines: [] });
+  assert.deepEqual(output.usage, { inputTokens: 50, outputTokens: 20 });
+  assert.equal(ok.calls[0].url, 'https://api.tokenfactory.nebius.com/v1/chat/completions');
+  assert.equal(ok.calls[0].init.headers.authorization, `Bearer ${NKEY}`);
+  assert.equal(ok.calls[0].body.model, 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B');
+  assert.deepEqual(ok.calls[0].body.response_format, { type: 'json_object' });
+  assert.ok(!ok.calls[0].url.includes(NKEY) && !JSON.stringify(ok.calls[0].body).includes(NKEY));
+
+  const rejected = scriptedFetch([{ status: 401, body: { error: { message: `Invalid API key ${NKEY}` } } }]);
+  await assert.rejects(
+    createAiProvider(config, { fetch: rejected.fetch }).generateJson({ system: 'S', user: 'U' }),
+    (error) => error.code === 'AI_HTTP_ERROR' && !error.message.includes(NKEY) && error.message.includes('[redacted]'),
+  );
+});
+
+test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
+  assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
+  assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });
+  assert.throws(() => parseModelJson('<think>still counting {hours'), (error) => error.code === 'AI_INCOMPLETE');
+  assert.throws(() => parseModelJson('<think>done</think>'), /only its reasoning/);
 });
 
 test('model JSON parsing tolerates fences but rejects non-objects and garbage', () => {

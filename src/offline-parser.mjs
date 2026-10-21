@@ -21,7 +21,7 @@ export class OfflineParseError extends Error {
   }
 }
 
-const NOT_SAMPLE = 'The offline sample parser only reads the bundled sample layout. Set AI_PROVIDER=gemini or AI_PROVIDER=openai to read other documents.';
+const NOT_SAMPLE = 'The offline sample parser only reads the bundled sample layout. Set AI_PROVIDER=nebius, gemini or openai to read other documents.';
 
 /** First-line titles of each document type, with the number locale they imply. */
 const TITLES = {

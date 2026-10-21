@@ -232,7 +232,7 @@
     reader.replaceChildren('Documents are read by ', h('strong', { text: config.ai.label }), '.');
     $('#paste-note').textContent = config.ai.isAI
       ? `Paste or load plain text. ${config.ai.label} reads each document separately; the rules engine does the checking.`
-      : 'Offline mode reads only the fixed layout of the sample documents. Start from a sample and change numbers to see the verdicts move. Configure Gemini or an OpenAI-compatible model to read any text.';
+      : 'Offline mode reads only the fixed layout of the sample documents. Start from a sample and change numbers to see the verdicts move. Configure Nebius Token Factory, Gemini or an OpenAI-compatible model to read any text.';
     $('#passcode-row').hidden = !config.approval.passcodeRequired;
     setButtonText($('#pay-btn'), config.paypal.environment === 'live' ? 'Pay with PayPal (LIVE)' : 'Pay with PayPal (sandbox)');
   }

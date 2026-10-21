@@ -59,17 +59,24 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
   const cases = new Map();
   const cache = createExtractionCache(100);
   const aiCalls = [];
+  const aiCallsToday = [];
 
   const provider = aiProvider.isAI
     ? {
       ...aiProvider,
       async generateJson(request) {
-        const cutoff = now() - 3_600_000;
-        while (aiCalls.length && aiCalls[0] < cutoff) aiCalls.shift();
+        const hourCutoff = now() - 3_600_000;
+        while (aiCalls.length && aiCalls[0] < hourCutoff) aiCalls.shift();
+        const dayCutoff = now() - 86_400_000;
+        while (aiCallsToday.length && aiCallsToday[0] < dayCutoff) aiCallsToday.shift();
         if (aiCalls.length >= config.aiMaxCallsPerHour) {
           throw new AiError('AI_BUDGET', 'The hourly AI budget of this server is used up. Try again later or use a sample case.');
         }
+        if (config.aiMaxCallsPerDay && aiCallsToday.length >= config.aiMaxCallsPerDay) {
+          throw new AiError('AI_BUDGET', 'The daily AI budget of this server is used up. Try again tomorrow or use a sample case.');
+        }
         aiCalls.push(now());
+        if (config.aiMaxCallsPerDay) aiCallsToday.push(now());
         return aiProvider.generateJson(request);
       },
     }

@@ -63,6 +63,7 @@ export function resolveConfig(env, argv = []) {
     approverPasscode: effective.APPROVER_PASSCODE ? String(effective.APPROVER_PASSCODE) : null,
     mcpBearerToken: effective.MCP_BEARER_TOKEN ? String(effective.MCP_BEARER_TOKEN) : null,
     aiMaxCallsPerHour: Number(effective.AI_MAX_CALLS_PER_HOUR) > 0 ? Number(effective.AI_MAX_CALLS_PER_HOUR) : 200,
+    aiMaxCallsPerDay: Number(effective.AI_MAX_CALLS_PER_DAY) > 0 ? Number(effective.AI_MAX_CALLS_PER_DAY) : null,
     logRequests: effective.LOG_REQUESTS !== '0',
   };
 }

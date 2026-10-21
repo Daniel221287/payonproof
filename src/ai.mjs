@@ -3,6 +3,7 @@
  *
  *   provider = { id, model, isAI, label, generateJson({system, user}) -> {json, text, usage, model} }
  *
+ * - nebius:  NVIDIA Nemotron (or any catalog model) on Nebius Token Factory, OpenAI-compatible API.
  * - gemini:  Google Gemini REST generateContent with JSON output.
  * - openai:  any OpenAI-compatible /chat/completions endpoint (OpenAI, Ollama, LM Studio, vLLM ...).
  * - offline: no model at all; callers use the deterministic sample parser and templates.
@@ -13,6 +14,8 @@
 import { OFFLINE_LABEL } from './offline-parser.mjs';
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash';
+export const DEFAULT_NEBIUS_MODEL = 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B';
+export const NEBIUS_BASE_URL = 'https://api.tokenfactory.nebius.com/v1';
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 export class AiError extends Error {
@@ -39,14 +42,35 @@ export class AiConfigError extends Error {
 
 /**
  * Resolve the AI configuration from environment variables.
- * Default: gemini when GEMINI_API_KEY is set, openai when AI_BASE_URL is set, otherwise offline.
+ * Default: nebius when NEBIUS_API_KEY is set, gemini when GEMINI_API_KEY is set, openai when AI_BASE_URL is set,
+ * otherwise offline.
  * @param {Record<string, string|undefined>} env
  */
 export function resolveAiConfig(env) {
   const explicit = (env.AI_PROVIDER ?? '').trim().toLowerCase();
-  const provider = explicit || (env.GEMINI_API_KEY ? 'gemini' : env.AI_BASE_URL ? 'openai' : 'offline');
+  const provider = explicit || (env.NEBIUS_API_KEY ? 'nebius' : env.GEMINI_API_KEY ? 'gemini' : env.AI_BASE_URL ? 'openai' : 'offline');
   const timeoutMs = Number(env.AI_TIMEOUT_MS) > 0 ? Number(env.AI_TIMEOUT_MS) : 60_000;
   if (provider === 'offline') return { provider, model: 'offline-sample-parser', timeoutMs };
+  if (provider === 'nebius') {
+    if (!env.NEBIUS_API_KEY) throw new AiConfigError('AI_PROVIDER=nebius needs NEBIUS_API_KEY (Nebius Token Factory > API keys).');
+    const model = (env.NEBIUS_MODEL || DEFAULT_NEBIUS_MODEL).trim();
+    if (!/^[A-Za-z0-9._\/:-]+$/.test(model)) throw new AiConfigError('NEBIUS_MODEL contains unexpected characters.');
+    let url;
+    try {
+      url = new URL(env.NEBIUS_BASE_URL || NEBIUS_BASE_URL);
+    } catch {
+      throw new AiConfigError('NEBIUS_BASE_URL is not a valid URL.');
+    }
+    if (url.protocol !== 'https:') throw new AiConfigError('NEBIUS_BASE_URL must be https.');
+    return {
+      provider,
+      model,
+      baseUrl: url.href.replace(/\/+$/, ''),
+      apiKey: env.NEBIUS_API_KEY,
+      jsonMode: env.AI_JSON_MODE !== '0',
+      timeoutMs,
+    };
+  }
   if (provider === 'gemini') {
     if (!env.GEMINI_API_KEY) throw new AiConfigError('AI_PROVIDER=gemini needs GEMINI_API_KEY.');
     const model = (env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL).replace(/^models\//, '');
@@ -72,7 +96,7 @@ export function resolveAiConfig(env) {
       timeoutMs,
     };
   }
-  throw new AiConfigError('AI_PROVIDER must be gemini, openai or offline.');
+  throw new AiConfigError('AI_PROVIDER must be nebius, gemini, openai or offline.');
 }
 
 function redact(text, secret) {
@@ -109,6 +133,11 @@ async function send(fetchImpl, url, init, timeoutMs, label) {
 export function parseModelJson(text) {
   if (typeof text !== 'string' || text.trim() === '') throw new AiError('AI_BAD_JSON', 'The model returned an empty answer.');
   let body = text.trim();
+  // Reasoning models (e.g. Nemotron, Qwen) may put their thinking before the answer.
+  const thinkEnd = body.lastIndexOf('</think>');
+  if (thinkEnd >= 0) body = body.slice(thinkEnd + '</think>'.length).trim();
+  else if (/^<think>/i.test(body)) throw new AiError('AI_INCOMPLETE', 'The model stopped while still reasoning.');
+  if (body === '') throw new AiError('AI_BAD_JSON', 'The model returned only its reasoning, no answer.');
   const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(body);
   if (fenced) body = fenced[1];
   if (!body.startsWith('{')) {
@@ -224,7 +253,9 @@ export function createAiProvider(config, { fetch: fetchImpl = globalThis.fetch, 
     : (request) => callOpenAi(fetchImpl, config, state, request);
   const label = config.provider === 'gemini'
     ? `Google Gemini (${config.model})`
-    : `OpenAI-compatible endpoint (${config.model} at ${new URL(config.baseUrl).host})`;
+    : config.provider === 'nebius'
+      ? `Nebius Token Factory (${config.model})`
+      : `OpenAI-compatible endpoint (${config.model} at ${new URL(config.baseUrl).host})`;
   return {
     id: config.provider,
     model: config.model,

@@ -16,9 +16,15 @@ services:
         sync: false
       - key: PAYEE_EMAIL_OVERRIDE
         sync: false
+      - key: NEBIUS_API_KEY
+        sync: false
+      - key: NEBIUS_MODEL
+        value: nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B
       - key: GEMINI_API_KEY
         sync: false
       - key: AI_MAX_CALLS_PER_HOUR
-        value: "120"
+        value: "60"
+      - key: AI_MAX_CALLS_PER_DAY
+        value: "300"
       - key: APPROVER_PASSCODE
         sync: false

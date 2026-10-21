@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createAiProvider } from '../src/ai.mjs';
+import { AiError, createAiProvider } from '../src/ai.mjs';
 import { ApprovalError, createApprovalRegistry } from '../src/approval.mjs';
 import { resolveConfig } from '../src/config.mjs';
 import { createPayPalClient } from '../src/paypal.mjs';
@@ -160,4 +160,45 @@ test('pasted documents are validated before anything is read', async () => {
   assert.equal(blocked.proposal, null);
   assert.ok(blocked.blockers.length >= 2);
   assert.throws(() => service.approve(blocked.id, { previewHash: 'a'.repeat(64), confirm: true }), (e) => e.code === 'NOT_PAYABLE');
+});
+
+test('AI budgets: hourly and daily caps stop model calls before they are sent', async () => {
+  let clock = Date.parse('2026-11-01T10:00:00Z');
+  let calls = 0;
+  const fakeAi = {
+    id: 'fake', model: 'fake-1', isAI: true, label: 'Fake AI',
+    async generateJson() {
+      calls += 1;
+      throw new AiError('FAKE_DOWN', 'fake model is down');
+    },
+  };
+  const config = resolveConfig({ PAYPAL_MOCK: '1', AI_MAX_CALLS_PER_HOUR: '3', AI_MAX_CALLS_PER_DAY: '5' });
+  assert.equal(config.aiMaxCallsPerDay, 5);
+  assert.equal(resolveConfig({ PAYPAL_MOCK: '1' }).aiMaxCallsPerDay, null, 'no daily cap unless configured');
+  const service = createService({
+    config, samples, approvals: createApprovalRegistry(), payPalClient: null, aiProvider: fakeAi,
+    now: () => clock, readbackDelaysMs: [0],
+  });
+  const analyze = (n) => service.analyze({ documents: [
+    { type: 'contract', text: `Contract ${n}` },
+    { type: 'invoice', text: `Invoice ${n}` },
+  ] });
+  const errorsOf = (caseView) => caseView.documents.map((doc) => doc.errors[0]?.message ?? '');
+
+  await analyze(1);
+  assert.equal(calls, 2);
+  const second = await analyze(2);
+  assert.equal(calls, 3, 'the fourth call in the hour is never sent');
+  assert.match(errorsOf(second)[1], /hourly AI budget/);
+
+  clock += 61 * 60_000;
+  await analyze(3);
+  assert.equal(calls, 5);
+  const fourth = await analyze(4);
+  assert.equal(calls, 5, 'the daily cap holds even with a fresh hour');
+  assert.ok(errorsOf(fourth).every((message) => /daily AI budget/.test(message)));
+
+  clock += 24 * 3_600_000;
+  await analyze(5);
+  assert.equal(calls, 7, 'a new 24-hour window allows calls again');
 });
