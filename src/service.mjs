@@ -611,6 +611,18 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
 
       const { core, previewHash: approvedHash } = record.proposal;
       const senderBatchId = senderBatchIdFromPreviewHash(approvedHash);
+      const invoice = ascii(core.invoiceNumber).slice(0, 60);
+      // Built first: if the body is invalid, nothing is reserved and the approval is not used up.
+      const body = buildPayoutBody({
+        senderBatchId,
+        receiver: core.payee.email,
+        amountCents: core.payableCents,
+        currency: core.currency,
+        senderItemId: core.caseId,
+        note: `PayOnProof invoice ${invoice}: paid ${core.paidLines.length} proven line(s). Ref ${approvedHash.slice(0, 16)}`,
+        emailSubject: `Payment for invoice ${invoice}`.slice(0, 255),
+        emailMessage: `Payment of ${centsToDecimalString(core.payableCents)} ${core.currency} for invoice ${invoice}: ${core.paidLines.length} proven line(s). An explanation of any deductions is sent separately.`,
+      });
       // Reserve the invoice before anything leaves. This runs synchronously (no await since the checks
       // above), so two requests for the same invoice cannot both pass it.
       let reservation;
@@ -625,17 +637,6 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (!reservation.ok) throw new ServiceError(409, 'INVOICE_ALREADY_PAID', `${alreadyPaidReason(reservation.entry)} Nothing was sent.`);
       approvals.consume(claim);
 
-      const invoice = ascii(core.invoiceNumber).slice(0, 60);
-      const body = buildPayoutBody({
-        senderBatchId,
-        receiver: core.payee.email,
-        amountCents: core.payableCents,
-        currency: core.currency,
-        senderItemId: core.caseId,
-        note: `PayOnProof invoice ${invoice}: paid ${core.paidLines.length} proven line(s). Ref ${approvedHash.slice(0, 16)}`,
-        emailSubject: `Payment for invoice ${invoice}`.slice(0, 255),
-        emailMessage: `Payment of ${centsToDecimalString(core.payableCents)} ${core.currency} for invoice ${invoice}: ${core.paidLines.length} proven line(s). An explanation of any deductions is sent separately.`,
-      });
       record.payout = {
         state: 'SENDING',
         environment: paypalEnvironment,
