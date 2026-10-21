@@ -144,6 +144,24 @@ The receipt is canonical JSON with its own SHA-256, downloadable from the page.
 
 There is no approval tool. An agent verifies and proposes, hands the person the `approvalUrl`, the person approves in the page and gives the agent the single-use token (**Copy token for an MCP agent**), and the agent pays. Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport Streamable HTTP, URL `http://127.0.0.1:4410/mcp`, connected through the Inspector's proxy). Set `MCP_BEARER_TOKEN` to require `Authorization: Bearer …` on `/mcp`.
 
+## HTTP API
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /health` | Liveness, AI and PayPal mode, MCP protocol version |
+| `GET /api/config` | What the UI may know: AI label, PayPal mode, approval settings (no secrets) |
+| `GET /api/cases` | The bundled sample cases with their documents |
+| `POST /api/analyze` | `{sampleId}` or `{documents: [{type, name, text}]}`: extract, verify, draft the message, build the proposal |
+| `GET /api/cases/:id` | A case as shown in the UI |
+| `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
+| `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode?}`: the human approval, same-origin page only |
+| `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back |
+| `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything) |
+| `POST /api/payout/:id/reconcile` | Resolve `UNKNOWN_AFTER_SEND` with the same `sender_batch_id` |
+| `POST /mcp` | MCP Streamable HTTP endpoint |
+
+State-changing requests must be JSON and, when they carry an `Origin`, come from the same origin; `/api/approve` requires it.
+
 ## Safety model
 
 - Money logic is pure, deterministic and tested; the AI cannot change an amount or a verdict.
@@ -199,7 +217,7 @@ npm test             # node --test: 117 tests, no network
 npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK PayPal, writes docs/img/*.png
 ```
 
-The unit and integration tests cover every verdict and the rounding rules, the extraction validator (missing fields, numbers as strings, localised strings, negatives), the offline parser on all samples against fixtures in `test/fixtures/`, proposal hash stability and invalidation, approval single use, expiry and hash binding, the PayPal client against mocked responses (token, exact payout body and `sender_batch_id`, duplicate batch, 401 refresh, timeout to `UNKNOWN_AFTER_SEND` and reconciliation, rejections, readback), the MCP tools through a real MCP client (`HUMAN_APPROVAL_REQUIRED` without approval), the HTTP server (CSP, Host and Origin checks, limits) and the UI files. External APIs are only ever reached through an injectable `fetch`; tests use `127.0.0.1` only. The e2e script needs a Chromium for `playwright-core` 1.56 (for example `npx playwright install chromium`, or `PLAYWRIGHT_BROWSERS_PATH` pointing at an existing one) and fails on console errors, CSP violations or horizontal scrolling at 390 px.
+The unit and integration tests cover every verdict and the rounding rules, the extraction validator (missing fields, numbers as strings, localised strings, negatives), the offline parser on all samples against fixtures in `test/fixtures/`, proposal hash stability and invalidation, approval single use, expiry and hash binding, the PayPal client against mocked responses (token, exact payout body and `sender_batch_id`, duplicate batch, 401 refresh, timeout to `UNKNOWN_AFTER_SEND` and reconciliation, rejections, readback), the MCP tools through a real MCP client (`HUMAN_APPROVAL_REQUIRED` without approval), the HTTP server (CSP, Host and Origin checks, limits) and the UI files. External APIs are only ever reached through an injectable `fetch`; tests use `127.0.0.1` only. The e2e script needs the Chromium build that matches the pinned `playwright-core` (`npx playwright-core install chromium` once, or `PLAYWRIGHT_BROWSERS_PATH` pointing at an existing install) and fails on console errors, CSP violations or horizontal scrolling at 390 px.
 
 ## Project layout
 
