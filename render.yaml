@@ -1,6 +1,12 @@
 # Render Blueprint (New > Blueprint > pick this repository). One free web service.
 # Render sets PORT and RENDER_EXTERNAL_HOSTNAME itself; the server then binds 0.0.0.0
 # and allows that host name. Values marked sync: false are asked for when the Blueprint is created.
+#
+# REQUIRED: APPROVER_PASSCODE, at least 8 characters. On Render the server refuses to start
+# without it, because the passcode is what makes an approval a person's approval.
+# For a demo without a PayPal account set PAYPAL_MOCK=1 (MOCK PayPal, no network); for the real
+# sandbox leave it empty and set PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET and PAYEE_EMAIL_OVERRIDE.
+# The free plan's disk is ephemeral: the paid-invoice ledger (LEDGER_PATH) is lost on restart or deploy.
 services:
   - type: web
     name: payonproof
@@ -10,11 +16,17 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: APPROVER_PASSCODE   # required, at least 8 characters
+        sync: false
+      - key: PAYPAL_MOCK         # 1 = MOCK PayPal; empty = PayPal sandbox with the credentials below
+        sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: PAYPAL_CLIENT_SECRET
         sync: false
       - key: PAYEE_EMAIL_OVERRIDE
+        sync: false
+      - key: MCP_BEARER_TOKEN    # optional: require "Authorization: Bearer <token>" on /mcp
         sync: false
       - key: NEBIUS_API_KEY
         sync: false
@@ -26,5 +38,3 @@ services:
         value: "60"
       - key: AI_MAX_CALLS_PER_DAY
         value: "300"
-      - key: APPROVER_PASSCODE
-        sync: false

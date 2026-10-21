@@ -89,3 +89,13 @@ test('.env.example documents every environment variable the code reads', () => {
   assert.match(read('.gitignore'), /^\.env$/m);
   assert.match(read('.gitignore'), /^node_modules\/?$/m);
 });
+
+test('the Render blueprint asks for the approver passcode, MOCK PayPal and the MCP token', () => {
+  const blueprint = read('render.yaml');
+  for (const key of ['APPROVER_PASSCODE', 'PAYPAL_MOCK', 'MCP_BEARER_TOKEN', 'PAYPAL_CLIENT_ID', 'PAYPAL_CLIENT_SECRET']) {
+    assert.match(blueprint, new RegExp(`- key: ${key}\\b[^\\n]*\\n\\s+sync: false`), `${key} is asked for when the Blueprint is created`);
+  }
+  assert.match(blueprint, /REQUIRED: APPROVER_PASSCODE, at least 8 characters/);
+  assert.throws(() => resolveConfig({ RENDER: 'true', PORT: '10000', RENDER_EXTERNAL_HOSTNAME: 'payonproof.onrender.com' }), /APPROVER_PASSCODE is missing/);
+  assert.equal(resolveConfig({ RENDER: 'true', PORT: '10000', PAYPAL_MOCK: '1', APPROVER_PASSCODE: 'long-enough' }).paypal.mode, 'mock');
+});
