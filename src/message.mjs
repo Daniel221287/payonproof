@@ -3,9 +3,11 @@
  *
  * Facts (line ids, amounts, reasons) always come from the verification engine.
  * With an AI provider the model only phrases those facts; its draft is
- * fact-checked (totals and every disputed line must appear) and replaced by the
- * fixed template if the check fails. Offline mode always uses the template and
- * labels it as such. The human can edit the text before approving.
+ * fact-checked (totals, every disputed line, every under-billed line and a
+ * mismatching invoice total must appear) and replaced by the fixed template if
+ * the check fails. Offline mode always uses the template and labels it as such.
+ * A person can edit the text before approving; text an agent sends over MCP
+ * must pass the same fact check (see service.updateMessage).
  */
 import { AiError } from './ai.mjs';
 import { formatMoney, formatQuantity } from './money.mjs';
