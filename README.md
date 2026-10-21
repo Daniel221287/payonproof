@@ -6,7 +6,7 @@ AI reads the messy documents. A deterministic engine proves every invoice line a
 
 ![Proof view: claimed €6,338.00, payable €5,035.00, every line with its verdict](docs/img/desktop-light-proof.png)
 
-Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community and runs on Render.
+Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community, and is set up to deploy on Render (`render.yaml`).
 
 ---
 
@@ -58,7 +58,9 @@ With real sandbox credentials (see [PayPal sandbox setup](#paypal-sandbox-setup)
                                                    ▼
                               previewHash = SHA-256(canonical JSON of the proposal)
                                                    ▼
-                person approves in the UI ─► single-use token bound to previewHash, 10 min
+       person approves in the UI (approver passcode) ─► single-use token bound to previewHash, 10 min
+                                                   ▼
+     paid-invoice ledger reserves contract payee + invoice number (another case for it is blocked)
                                                    ▼
      PayPal Payouts  POST /v1/payments/payouts   sender_batch_id = "POP-" + previewHash
                                                    ▼
@@ -162,7 +164,7 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 | `payonproof_verify_case` | Documents (or a `sampleId`) in, verdicts and a `caseId` out |
 | `payonproof_propose_payment` | Returns the exact preview, its `previewHash`, status `AWAITING_HUMAN_APPROVAL` and an `approvalUrl` for the person. An optional `messageText` replaces the message only if it passes the AI fact check (else `MESSAGE_FACT_CHECK_FAILED` with what is missing); it withdraws any approval, so the tool is not idempotent |
 | `payonproof_pay_approved` | Pays only with a valid approval token from the person; without one it returns `HUMAN_APPROVAL_REQUIRED` |
-| `payonproof_payout_status` | Reads the payout back from PayPal and returns the receipt |
+| `payonproof_payout_status` | Reads the payout back from PayPal and returns the receipt (a readback younger than 10 s is reused) |
 
 There is no approval tool, and no tool accepts the approver passcode. An agent verifies and proposes, hands the person the `approvalUrl`, the person approves in the page (with the approver passcode) and gives the agent the single-use token (**Copy token for an MCP agent**), and the agent pays. What keeps an agent from approving by itself is the passcode, not MCP: an agent that also has a plain HTTP tool could call `/api/approve` directly, so on a server without a passcode (allowed only on 127.0.0.1, see [Safety model](#safety-model)) it could approve. Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport Streamable HTTP, URL `http://127.0.0.1:4410/mcp`, connected through the Inspector's proxy). Set `MCP_BEARER_TOKEN` to require `Authorization: Bearer …` on `/mcp`.
 
@@ -170,12 +172,12 @@ There is no approval tool, and no tool accepts the approver passcode. An agent v
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /health` | Liveness, AI and PayPal mode, MCP protocol version |
+| `GET /health` | Liveness, AI and PayPal mode, where the paid-invoice ledger lives (`file` or `memory`), MCP protocol version |
 | `GET /api/config` | What the UI may know: AI label, PayPal mode, approval settings (no secrets) |
 | `GET /api/cases` | The bundled sample cases with their documents |
-| `POST /api/analyze` | `{sampleId}` or `{documents: [{type, name, text}]}`: extract, verify, draft the message, build the proposal |
+| `POST /api/analyze` | `{sampleId}` or `{documents: [{type, name, text}]}`: extract, verify, draft the message, build the proposal (if a document cannot be read, only the reason is returned: no verdicts, no proposal) |
 | `GET /api/cases/:id` | A case as shown in the UI |
-| `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
+| `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn); refused once the payment was sent (`409 ALREADY_PAID`) |
 | `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 20 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`, with the time approvals reopen) |
 | `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back; `409 INVOICE_ALREADY_PAID` when another case already sent this invoice |
 | `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything; a readback younger than 10 s is reused, so status requests cannot flood the PayPal app) |
@@ -219,7 +221,7 @@ Requires Node.js 22 or newer.
 
 ```bash
 npm install
-npm start            # 127.0.0.1:4410; offline AI; PayPal as configured in .env
+npm start            # 127.0.0.1:4410; AI and PayPal as configured in .env (offline without keys)
 npm run demo         # same, but with MOCK PayPal (no network at all)
 ```
 
@@ -242,7 +244,7 @@ npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK Pa
 npm run e2e -- --update-docs   # the same, and it replaces the README screenshots in docs/img/
 ```
 
-The unit and integration tests cover every verdict and the rounding rules, the extraction validator (missing fields, numbers as strings, localised strings, negatives), the offline parser on all samples against fixtures in `test/fixtures/`, proposal hash stability and invalidation, approval single use, expiry and hash binding, the PayPal client against mocked responses (token, exact payout body and `sender_batch_id`, duplicate batch, 401 refresh, timeout to `UNKNOWN_AFTER_SEND` and reconciliation, rejections, readback), the MCP tools through a real MCP client (`HUMAN_APPROVAL_REQUIRED` without approval), the HTTP server (CSP, Host and Origin checks, limits) and the UI files. External APIs are only ever reached through an injectable `fetch`; tests use `127.0.0.1` only. The e2e script needs the Chromium build that matches the pinned `playwright-core` (`npx playwright-core install chromium` once, or `PLAYWRIGHT_BROWSERS_PATH` pointing at an existing install) and fails on console errors, CSP violations or horizontal scrolling at 390 px. It also walks the keyboard path past the grid, and checks the locked message after payment, the paid-invoice ledger, the "Cannot verify" state and the page without a server. Without `--update-docs` it never touches the tracked screenshots.
+The unit and integration tests cover every verdict and the rounding rules, who may sign a timesheet, the trade on the timesheet against the invoiced role, never paying more than a line or the invoice total, the extraction validator (missing fields, numbers as strings, localised strings, negatives), the offline parser on all samples against fixtures in `test/fixtures/`, the offline fallback for samples when the AI fails, the "Cannot verify" state, proposal hash stability and invalidation, approval single use, expiry and hash binding, the approver passcode boundary (refusal to start without it, the global lockout), the proxy client address, the paid-invoice ledger (two cases for one invoice, concurrent pays, release rules, atomic file, restart), the PayPal client against mocked responses (token, exact payout body and `sender_batch_id`, duplicate batch, 401 refresh, timeout to `UNKNOWN_AFTER_SEND` and reconciliation, rejections, readback and its reuse), the MCP tools through a real MCP client (`HUMAN_APPROVAL_REQUIRED` without approval, fact-checked agent messages), the HTTP server (CSP, Host and Origin checks, limits) and the UI files. External APIs are only ever reached through an injectable `fetch`; tests use `127.0.0.1` only. The e2e script needs the Chromium build that matches the pinned `playwright-core` (`npx playwright-core install chromium` once, or `PLAYWRIGHT_BROWSERS_PATH` pointing at an existing install) and fails on console errors, CSP violations or horizontal scrolling at 390 px. It also walks the keyboard path past the grid, and checks the locked message after payment, the paid-invoice ledger, the "Cannot verify" state and the page without a server. Without `--update-docs` it never touches the tracked screenshots.
 
 ## Project layout
 
