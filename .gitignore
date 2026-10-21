@@ -6,4 +6,5 @@ node_modules/
 .DS_Store
 coverage/
 docs/img/*-failure.png
+e2e-screenshots/
 data/

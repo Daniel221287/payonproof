@@ -108,3 +108,11 @@ test('keyboard: the grid is one Tab stop with a skip link before it, and Pay mov
   assert.match(html, /id="inspector" aria-live="polite" tabindex="-1"/);
   assert.match(app, /if \(focusReceipt\) \$\('#receipt-title'\)\?\.focus/);
 });
+
+test('npm run e2e leaves the tracked screenshots alone unless --update-docs is given', () => {
+  const script = read('scripts/e2e-screenshots.mjs');
+  assert.match(script, /const outDir = process\.argv\.includes\('--update-docs'\) \? path\.join\(root, 'docs', 'img'\) : scratchDir;/);
+  assert.match(script, /const scratchDir = path\.join\(root, 'e2e-screenshots'\);/);
+  assert.match(read('.gitignore'), /^e2e-screenshots\/$/m);
+  assert.match(read('.gitignore'), /^data\/$/m, 'the paid-invoice ledger is never committed');
+});

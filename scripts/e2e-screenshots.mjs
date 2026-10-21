@@ -1,10 +1,12 @@
 /**
  * End-to-end check of the real UI in Chromium, offline: offline sample parser + MOCK PayPal.
  * Loads the page, picks the "Overbilled" sample, checks the verdicts, approves, pays,
- * waits for the PayPal readback and saves screenshots to docs/img/.
+ * waits for the PayPal readback and saves screenshots.
  *
- *   npm run e2e            (needs a Chromium for playwright-core, e.g. PLAYWRIGHT_BROWSERS_PATH)
+ *   npm run e2e                      screenshots go to e2e-screenshots/ (gitignored)
+ *   npm run e2e -- --update-docs     screenshots replace the README images in docs/img/
  *
+ * Needs a Chromium for playwright-core (e.g. PLAYWRIGHT_BROWSERS_PATH).
  * Fails on console errors, CSP violations or horizontal page scrolling.
  */
 import assert from 'node:assert/strict';
@@ -15,8 +17,11 @@ import { chromium } from 'playwright-core';
 import { createApp } from '../server.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = path.join(root, 'docs', 'img');
+const scratchDir = path.join(root, 'e2e-screenshots');
+// The tracked README screenshots are only replaced on request.
+const outDir = process.argv.includes('--update-docs') ? path.join(root, 'docs', 'img') : scratchDir;
 mkdirSync(outDir, { recursive: true });
+mkdirSync(scratchDir, { recursive: true });
 
 const browser = await chromium.launch();
 let base;
@@ -149,7 +154,7 @@ for (const run of runs) {
     failures += 1;
     console.error(`FAILED ${run.name}: ${error.message}`);
     if (problems.length) console.error(problems.join('\n'));
-    await page.screenshot({ path: path.join(outDir, `${run.name}-failure.png`), fullPage: true }).catch(() => {});
+    await page.screenshot({ path: path.join(scratchDir, `${run.name}-failure.png`), fullPage: true }).catch(() => {});
   }
   await context.close();
   await app.close();
