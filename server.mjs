@@ -21,6 +21,7 @@ import { createAiProvider } from './src/ai.mjs';
 import { ApprovalError, createApprovalRegistry } from './src/approval.mjs';
 import { resolveConfig } from './src/config.mjs';
 import { loadDotEnv } from './src/env.mjs';
+import { createLedger } from './src/ledger.mjs';
 import { createPayPalClient } from './src/paypal.mjs';
 import { createMockPayPal } from './src/paypal-mock.mjs';
 import { loadSamples } from './src/samples.mjs';
@@ -161,12 +162,19 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
 
   const approvals = createApprovalRegistry({ now });
   const samples = loadSamples(path.join(ROOT, 'samples'));
+  // Paid-invoice ledger: a JSON file (LEDGER_PATH, default data/ledger.json). With MOCK PayPal it stays in
+  // memory unless LEDGER_PATH is set, because the mock forgets its payouts on restart as well.
+  const ledgerPath = config.ledgerPath
+    ? path.resolve(ROOT, config.ledgerPath)
+    : (config.paypal.mode === 'mock' ? null : path.join(ROOT, 'data', 'ledger.json'));
+  const ledger = createLedger({ filePath: ledgerPath, now });
   const service = createService({
     config,
     samples,
     aiProvider,
     payPalClient,
     approvals,
+    ledger,
     now,
     log,
     readbackDelaysMs: readbackDelaysMs ?? (config.paypal.mode === 'mock' ? [0, 300, 600] : [0, 1000, 2000, 4000]),
@@ -411,7 +419,7 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
       }
       if (url.pathname === '/health') {
         return sendJson(req, res, 200, {
-          ok: true, version: VERSION, ai: config.ai.provider, paypal: config.paypal.mode,
+          ok: true, version: VERSION, ai: config.ai.provider, paypal: config.paypal.mode, ledger: ledger.filePath ? 'file' : 'memory',
           mcp: { endpoint: '/mcp', protocolVersion: MCP_PROTOCOL_VERSION },
         });
       }
@@ -447,6 +455,7 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
     server,
     service,
     config,
+    ledger,
     mockPayPal,
     /**
      * @param {number} port
@@ -487,6 +496,7 @@ async function main() {
   console.log(`PayOnProof ${VERSION} listening on ${shown}`);
   console.log(`  extraction: ${app.service.publicConfig().ai.label}`);
   console.log(`  payments:   ${paypal}`);
+  console.log(`  ledger:     ${app.ledger.filePath ? path.relative(ROOT, app.ledger.filePath) || app.ledger.filePath : 'in memory (MOCK PayPal; set LEDGER_PATH to keep it on disk)'}`);
   if (dotenv.found) console.log(`  .env:       ${dotenv.loaded.length} variable(s) loaded`);
   const stop = () => app.close().then(() => process.exit(0));
   process.on('SIGTERM', stop);

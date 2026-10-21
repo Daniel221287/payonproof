@@ -100,11 +100,14 @@ All money is integer cents; quantities are integer thousandths. Each line gets o
 | Pay | `POST /v1/payments/payouts` | One `EMAIL` item, `amount.value` from integer cents (`"5035.00"`), `note` with a short reference, `sender_item_id` = case id, `sender_batch_id` = `POP-<previewHash>`, `PayPal-Request-Id` = the same value |
 | Read back | `GET /v1/payments/payouts/{payout_batch_id}` | Polled until the batch or item reaches a final state (`SUCCESS`, `DENIED`, `CANCELED`, `UNCLAIMED`, `FAILED`, `RETURNED`, …) |
 
-**No double payment, by construction:**
+**What prevents double payment** (one server instance):
 
 1. The approval token is single-use and bound to one exact `previewHash`.
-2. A case sends at most one payout; a second pay request is refused.
+2. A case sends at most one payout; a second pay request is refused (`409 ALREADY_PAID`).
 3. `sender_batch_id` is derived from the approved `previewHash`. PayPal processes a `sender_batch_id` at most once in 30 days and answers a repeat with an error that links to the existing batch. PayOnProof then reads that batch instead of paying again.
+4. **Paid-invoice ledger** (`LEDGER_PATH`, default `data/ledger.json`): every invoice sent to PayPal is recorded under its contract payee and normalised invoice number. The pay step reserves the invoice before the payout leaves (synchronously, so two requests cannot both pass) and keeps it unless PayPal provably paid nothing (`NOT_SENT`, `REJECTED`). Any other case for that invoice is blocked with `INVOICE_ALREADY_PAID`, naming the earlier case, its date and its batch; a pay request that races it gets `409 INVOICE_ALREADY_PAID` and nothing is sent.
+
+Not covered: the same work billed again under a new invoice number, one timesheet day or delivery note used by two different invoices (evidence is consumed within a case only), several server instances (one ledger file belongs to one process) and a lost ledger file. Render's free instances have an ephemeral disk, so there the ledger starts empty after every restart or deploy; production needs a persistent disk or a database. With MOCK PayPal the ledger stays in memory unless `LEDGER_PATH` is set, because the mock forgets its payouts on restart too.
 
 **Errors are reported honestly:**
 
@@ -174,7 +177,7 @@ There is no approval tool, and no tool accepts the approver passcode. An agent v
 | `GET /api/cases/:id` | A case as shown in the UI |
 | `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
 | `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 20 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`, with the time approvals reopen) |
-| `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back |
+| `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back; `409 INVOICE_ALREADY_PAID` when another case already sent this invoice |
 | `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything) |
 | `POST /api/payout/:id/reconcile` | Resolve `UNKNOWN_AFTER_SEND` with the same `sender_batch_id` |
 | `POST /mcp` | MCP Streamable HTTP endpoint |
@@ -189,7 +192,7 @@ State-changing requests must be JSON and, when they carry an `Origin`, come from
 - Approval is explicit, exact (hash-bound), single-use, short-lived and withdrawn by any change.
 - **The approver passcode is the approval boundary.** Whenever the server can be reached beyond this computer (`PORT`, `RENDER`, a non-loopback `ALLOWED_HOSTS` or `PUBLIC_BASE_URL`), it refuses to start without an `APPROVER_PASSCODE` of at least 8 characters. Passcodes are compared in constant time. After 20 wrong passcodes within 15 minutes, approvals are refused for everyone for 15 minutes (`429 APPROVALS_LOCKED`, and the page says when they reopen); the lockout is global, so changing IP addresses does not help, and the per-IP limits apply as well. MCP has no approval tool and never accepts the passcode. The `Origin` check only stops other websites.
 - **Without a passcode** (allowed only while the server listens on 127.0.0.1, as `npm run demo` does), anything that can send HTTP to 127.0.0.1 can approve: a script, or an agent with an HTTP tool. Set `APPROVER_PASSCODE` locally too if other programs on the computer are not trusted.
-- Three independent layers prevent double payment (see above); unknown outcomes are reconciled, never blindly retried.
+- Four layers prevent double payment, the last one across cases (see [PayPal integration](#paypal-integration), including what they do not cover); unknown outcomes are reconciled, never blindly retried.
 - Sandbox only; startup refuses unsafe PayPal settings.
 - HTTP hardening: strict Content-Security-Policy (scripts only from the same origin, no inline scripts; `<style>` elements need a per-request nonce, which the grid uses), Host allow-list against DNS rebinding, same-origin checks on state-changing requests, JSON-only bodies, 768 KB body limit, per-IP rate limits (behind a proxy the client address is the right-most `X-Forwarded-For` entry, the one the proxy appended; entries a client adds to the left are ignored), no `innerHTML` with data in the client.
 - Secrets are read from the environment or `.env` and are never printed, logged or sent anywhere except their own API.
@@ -229,7 +232,7 @@ Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and opti
 3. Environment variables: `APPROVER_PASSCODE` (**required**, at least 8 characters; the server refuses to start on Render without it), `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), an AI key (`NEBIUS_API_KEY` or `GEMINI_API_KEY`), `AI_MAX_CALLS_PER_HOUR`, `AI_MAX_CALLS_PER_DAY`, `MCP_BEARER_TOKEN`.
 4. Render sets `PORT` and `RENDER_EXTERNAL_HOSTNAME`; the server then listens on `0.0.0.0`, allows that host name and trusts the proxy headers (it takes the right-most `X-Forwarded-For` address, which Render's proxy appends). Add custom domains to `ALLOWED_HOSTS`.
 
-Free instances sleep when idle; cases, approvals and receipts live in memory and are gone after a restart.
+Free instances sleep when idle; cases, approvals and receipts live in memory and are gone after a restart. The paid-invoice ledger is a file on the instance's disk, which on the free plan is lost on every restart or deploy as well; attach a persistent disk and point `LEDGER_PATH` at it to keep it.
 
 ## Tests
 
@@ -253,6 +256,7 @@ src/verify.mjs          verification engine (pure)
 src/message.mjs         message to the subcontractor, templates in en/de/pl/uk
 src/proposal.mjs        payment proposal and previewHash
 src/approval.mjs        single-use, hash-bound approval tokens
+src/ledger.mjs          paid-invoice ledger (JSON file, atomic writes)
 src/paypal.mjs          PayPal OAuth2, Payouts, readback, error classes
 src/paypal-mock.mjs     MOCK PayPal (in-process sandbox fake)
 src/receipt.mjs         receipt, readback checks, SHA-256
@@ -268,7 +272,7 @@ docs/img/               screenshots (desktop 1280×800 and phone 390×844, light
 - Documents are plain text (paste or `.txt` upload). PDFs and photos would need an OCR or PDF-to-text step first.
 - Offline mode reads only the bundled sample layout; real documents need an AI provider. The AI adapters are tested against recorded response shapes; a live Gemini or sandbox run happens outside this repository's tests.
 - Cases, approvals and receipts are kept in memory on a single instance. A production system needs a database, user accounts and strong approver authentication (SSO or passkeys) instead of one shared passcode: here anyone who knows the passcode can approve, and without a passcode (127.0.0.1 only) any local program can. The global lockout means a stranger can block approvals for 15 minutes by sending wrong passcodes, but cannot approve.
-- Duplicate detection works within one invoice; the same invoice submitted again as a new case is not detected across cases.
+- Duplicate lines are detected within one invoice, and the paid-invoice ledger blocks the same invoice number from the same payee across cases. The same work billed again under a new invoice number, or evidence reused across invoices, is not detected.
 - Matching after normalisation is exact by design (no fuzzy matching). Roles and items in other languages need an alias or article code in the contract.
 - Amounts are net. VAT and reverse charge are out of scope. Only currencies with two decimals are accepted.
 - The MOCK PayPal reports a fee of 0.00; the sandbox reports its own values.

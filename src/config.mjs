@@ -95,6 +95,7 @@ export function resolveConfig(env, argv = []) {
     payeeOverride,
     approverPasscode,
     mcpBearerToken: effective.MCP_BEARER_TOKEN ? String(effective.MCP_BEARER_TOKEN) : null,
+    ledgerPath: effective.LEDGER_PATH && effective.LEDGER_PATH.trim() ? effective.LEDGER_PATH.trim() : null,
     aiMaxCallsPerHour: Number(effective.AI_MAX_CALLS_PER_HOUR) > 0 ? Number(effective.AI_MAX_CALLS_PER_HOUR) : 200,
     aiMaxCallsPerDay: Number(effective.AI_MAX_CALLS_PER_DAY) > 0 ? Number(effective.AI_MAX_CALLS_PER_DAY) : null,
     logRequests: effective.LOG_REQUESTS !== '0',

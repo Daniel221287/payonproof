@@ -90,7 +90,8 @@ test('full HTTP flow: approve from the page origin, pay with MOCK PayPal, read b
 });
 
 test('approvals only come from the page: no Origin, a foreign Origin or a cross-site fetch is refused', async () => {
-  const { case: caseView } = await (await post('/api/analyze', { sampleId: 'honest' })).json();
+  // "honest" was paid above, so the paid-invoice ledger would block it; use an invoice not paid in this app.
+  const { case: caseView } = await (await post('/api/analyze', { sampleId: 'overbilled' })).json();
   const body = { caseId: caseView.id, previewHash: caseView.proposal.previewHash, confirm: true };
   const noOrigin = await fetch(`${base}/api/approve`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   assert.equal(noOrigin.status, 403);

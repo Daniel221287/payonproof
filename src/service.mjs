@@ -8,6 +8,8 @@
  *  - Any change to a case (message edit) revokes its approvals and changes the previewHash.
  *  - A case sends at most one payout batch; retries and reconciliation reuse the same
  *    sender_batch_id, which PayPal processes at most once.
+ *  - An invoice is paid through at most one case: the paid-invoice ledger reserves it before the
+ *    payout leaves and blocks every other case for it (released only when nothing was paid).
  *  - "Paid" is only ever claimed from PayPal's readback.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -15,6 +17,7 @@ import { AiError, createAiProvider } from './ai.mjs';
 import { ApprovalError } from './approval.mjs';
 import { hashCanonical } from './canonical.mjs';
 import { assembleCaseInput, createExtractionCache, describeIssues, extractDocuments } from './extract.mjs';
+import { createLedger, invoiceKey, LedgerError } from './ledger.mjs';
 import { buildMessageFacts, draftMessage, factCheckMessage, LANGUAGE_NAMES } from './message.mjs';
 import { centsToDecimalString } from './money.mjs';
 import { buildPayoutBody, senderBatchIdFromPreviewHash } from './paypal.mjs';
@@ -68,6 +71,24 @@ function fallbackReason(doc) {
   return AI_FALLBACK_REASONS[doc.errorCode] ?? 'the model answer did not pass validation';
 }
 
+const LEDGER_STATE_WORDS = {
+  SENDING: 'being sent right now',
+  SENT: 'pending at PayPal',
+  UNKNOWN_AFTER_SEND: 'outcome unknown: reconcile that case',
+  PAID_VERIFIED: 'paid and verified',
+  UNCLAIMED: 'sent, not yet claimed',
+  FAILED: 'reported failed by PayPal: check that case first',
+  MISMATCH: 'readback mismatch: check that case first',
+};
+
+/** Why a case for an invoice that is already reserved or paid cannot be paid. */
+function alreadyPaidReason(entry) {
+  const when = (entry.sentAt ?? entry.reservedAt ?? '').replace('T', ' ').slice(0, 16);
+  const batch = entry.batchId ? `PayPal batch ${entry.batchId}` : `sender_batch_id ${String(entry.senderBatchId).slice(0, 20)}…`;
+  return `Invoice ${entry.invoiceNumber} from ${entry.payee} was already sent to PayPal in case ${entry.caseId} on ${when} UTC `
+    + `(${batch}, ${LEDGER_STATE_WORDS[entry.state] ?? entry.state}). An invoice is paid once; a new invoice needs its own number.`;
+}
+
 function sameSecret(given, expected) {
   const digest = (value) => createHash('sha256').update(String(value ?? '')).digest();
   return timingSafeEqual(digest(given), digest(expected));
@@ -76,10 +97,10 @@ function sameSecret(given, expected) {
 /**
  * @param {{
  *   config: object, samples: object[], aiProvider: object, payPalClient: object|null, approvals: object,
- *   now?: () => number, readbackDelaysMs?: number[], log?: (event: object) => void
+ *   ledger?: ReturnType<typeof createLedger>, now?: () => number, readbackDelaysMs?: number[], log?: (event: object) => void
  * }} deps
  */
-export function createService({ config, samples, aiProvider, payPalClient, approvals, now = Date.now, readbackDelaysMs = [0, 1000, 2000, 4000], log = () => {} }) {
+export function createService({ config, samples, aiProvider, payPalClient, approvals, ledger = createLedger(), now = Date.now, readbackDelaysMs = [0, 1000, 2000, 4000], log = () => {} }) {
   const cases = new Map();
   const cache = createExtractionCache(100);
   const aiCalls = [];
@@ -206,10 +227,16 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
     });
   }
 
+  /** The ledger entry of another case that has sent this case's invoice to PayPal since it was analysed. */
+  function ledgerConflict(record) {
+    const entry = ledger.get(record.invoiceKey);
+    return entry && entry.caseId !== record.id ? entry : null;
+  }
+
   function proposalStatus(record, approval) {
     if (!record.proposal) return null;
     if (record.payout && !['NOT_SENT', 'REJECTED'].includes(record.payout.state)) return 'PAYMENT_SENT';
-    if (record.proposal.status === 'BLOCKED') return 'BLOCKED';
+    if (record.proposal.status === 'BLOCKED' || ledgerConflict(record)) return 'BLOCKED';
     if (approval?.state === 'active' && approval.previewHash === record.proposal.previewHash) return 'APPROVED';
     return 'AWAITING_HUMAN_APPROVAL';
   }
@@ -220,6 +247,10 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
    */
   function view(record) {
     const approval = approvals.statusFor(record.id);
+    const conflict = record.proposal ? ledgerConflict(record) : null;
+    const conflictBlocker = conflict && !record.blockers.some((blocker) => blocker.code === 'INVOICE_ALREADY_PAID')
+      ? { code: 'INVOICE_ALREADY_PAID', severity: 'blocker', reason: alreadyPaidReason(conflict), earlierCaseId: conflict.caseId }
+      : null;
     const docStatus = new Map(record.extraction.documents.map((doc) => [doc.id, doc]));
     const contract = record.input?.contract ?? null;
     const invoice = record.input?.invoice ?? null;
@@ -272,13 +303,13 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       },
       unreadable: record.unreadable,
       verification: record.verification,
-      blockers: record.blockers,
+      blockers: conflictBlocker ? [...record.blockers, conflictBlocker] : record.blockers,
       message: record.message,
       proposal: record.proposal && {
         status: proposalStatus(record, approval),
         previewHash: record.proposal.previewHash,
         core: record.proposal.core,
-        blockers: record.proposal.blockers,
+        blockers: conflictBlocker ? [...record.proposal.blockers, conflictBlocker.reason] : record.proposal.blockers,
         summary: record.proposal.summary,
       },
       approval,
@@ -324,7 +355,17 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
     }
   }
 
-  async function applyCreateResult(record, result) {
+  /** Mirror the payout state into the paid-invoice ledger (NOT_SENT and REJECTED release the invoice). */
+  function syncLedger(record) {
+    if (!record.invoiceKey || !record.payout) return;
+    try {
+      ledger.record(record.invoiceKey, record.id, { state: record.payout.state, batchId: record.payout.batchId ?? null, sentAt: record.payout.sentAt });
+    } catch (error) {
+      log({ event: 'ledger.write_failed', caseId: record.id, message: error.message });
+    }
+  }
+
+  async function applyCreateResult(record, result, { reconciling = false } = {}) {
     const payout = record.payout;
     payout.attempts.push({ at: iso(), outcome: result.outcome, debugId: result.debugId ?? null, error: result.error ?? null });
     payout.error = result.error ?? null;
@@ -350,12 +391,17 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         payout.state = 'UNKNOWN_AFTER_SEND';
         break;
       case 'NOT_SENT':
-        payout.state = 'NOT_SENT';
+        // A reconcile attempt that did not reach PayPal leaves the first request's outcome unknown.
+        payout.state = reconciling ? 'UNKNOWN_AFTER_SEND' : 'NOT_SENT';
+        if (reconciling) {
+          payout.error = { code: 'RECONCILE_NOT_SENT', message: 'The reconcile request could not reach PayPal, so the outcome of the first request is still unknown. Try Reconcile with PayPal again.' };
+        }
         break;
       default:
         payout.state = 'REJECTED';
     }
     touch(record, `PAYOUT_${result.outcome}`, { batchId: payout.batchId ?? null });
+    syncLedger(record);
   }
 
   return {
@@ -365,6 +411,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         ai: { provider: aiProvider.id, model: aiProvider.model, isAI: aiProvider.isAI, label: aiProvider.label },
         paypal: { mode: config.paypal.mode, environment: paypalEnvironment, baseUrl: config.paypal.baseUrl },
         approval: { passcodeRequired: Boolean(config.approverPasscode), ttlSeconds: Math.round(approvals.ttlMs / 1000) },
+        ledger: { persistent: Boolean(ledger.filePath) },
         payeeOverride: Boolean(config.payeeOverride),
         limits: { maxDocuments: LIMITS.maxDocuments, maxDocumentChars: LIMITS.maxDocumentChars, maxMessageChars: LIMITS.maxMessageChars },
       };
@@ -427,6 +474,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         extraction,
         input,
         unreadable,
+        invoiceKey: null,
         verification: null,
         blockers,
         message: null,
@@ -443,6 +491,16 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
             code: 'AI_FALLBACK', severity: 'warning',
             reason: `AI unavailable (${extraction.fallback.reason}): this bundled sample was read by the offline sample parser instead. Detail: ${extraction.fallback.detail}.`,
           });
+        }
+        // Paid-invoice ledger: an invoice that another case already sent to PayPal is never paid again.
+        record.invoiceKey = invoiceKey({ payeeEmail: input.contract.payeeEmail, subcontractor: input.contract.subcontractor, invoiceNumber: input.invoice.invoiceNumber });
+        const earlier = ledger.get(record.invoiceKey);
+        if (!record.invoiceKey || earlier) {
+          const blocker = record.invoiceKey
+            ? { code: 'INVOICE_ALREADY_PAID', severity: 'blocker', reason: alreadyPaidReason(earlier), earlierCaseId: earlier.caseId }
+            : { code: 'INVOICE_NUMBER_UNUSABLE', severity: 'blocker', reason: `The invoice number "${input.invoice.invoiceNumber}" has no letters or digits, so it cannot be checked against invoices paid before.` };
+          verification.blockers.push(blocker);
+          verification.caseFindings.unshift(blocker);
         }
         record.verification = verification;
         record.blockers = verification.blockers;
@@ -512,6 +570,8 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (record.proposal.status === 'BLOCKED') {
         throw new ServiceError(409, 'PROPOSAL_BLOCKED', record.proposal.blockers.join(' '), { blockers: record.proposal.blockers });
       }
+      const conflict = ledgerConflict(record);
+      if (conflict) throw new ServiceError(409, 'INVOICE_ALREADY_PAID', alreadyPaidReason(conflict));
       if (confirm !== true) throw new ServiceError(400, 'CONFIRMATION_REQUIRED', 'Confirm that you checked the payee, the amount and the lines.');
       if (previewHash !== record.proposal.previewHash) {
         throw new ServiceError(409, 'PREVIEW_CHANGED', 'The payment changed since it was shown. Review the new preview and approve again.', { previewHash: record.proposal.previewHash });
@@ -540,10 +600,25 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (previewHash !== undefined && previewHash !== record.proposal.previewHash) {
         throw new ApprovalError('APPROVAL_HASH_MISMATCH', 'The payment changed after it was approved. Review and approve it again.');
       }
-      approvals.consume({ token: approvalToken, caseId, previewHash: record.proposal.previewHash });
+      const claim = { token: approvalToken, caseId, previewHash: record.proposal.previewHash };
+      approvals.check(claim);
 
       const { core, previewHash: approvedHash } = record.proposal;
       const senderBatchId = senderBatchIdFromPreviewHash(approvedHash);
+      // Reserve the invoice before anything leaves. This runs synchronously (no await since the checks
+      // above), so two requests for the same invoice cannot both pass it.
+      let reservation;
+      try {
+        reservation = ledger.reserve(record.invoiceKey, {
+          caseId, invoiceNumber: core.invoiceNumber, payee: core.payee.contractEmail, amountCents: core.payableCents, currency: core.currency, senderBatchId,
+        });
+      } catch (error) {
+        if (error instanceof LedgerError) throw new ServiceError(503, 'LEDGER_UNAVAILABLE', `${error.message} Nothing was sent.`);
+        throw error;
+      }
+      if (!reservation.ok) throw new ServiceError(409, 'INVOICE_ALREADY_PAID', `${alreadyPaidReason(reservation.entry)} Nothing was sent.`);
+      approvals.consume(claim);
+
       const invoice = ascii(core.invoiceNumber).slice(0, 60);
       const body = buildPayoutBody({
         senderBatchId,
@@ -572,6 +647,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         record.payout.state = 'UNKNOWN_AFTER_SEND';
         record.payout.error = { code: 'CLIENT_ERROR', message: error.message };
         touch(record, 'PAYOUT_ERROR');
+        syncLedger(record);
       }
       return view(record);
     },
@@ -586,6 +662,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (record.payout.batchId && payPalClient && record.payout.state !== 'SENDING') {
         await readBackInto(record, [0]);
         touch(record, 'READBACK', { state: record.payout.state });
+        syncLedger(record);
       }
       return view(record);
     },
@@ -606,15 +683,17 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (record.payout.batchId) {
         await readBackInto(record, readbackDelaysMs);
         touch(record, 'RECONCILED', { batchId: record.payout.batchId });
+        syncLedger(record);
         return view(record);
       }
       record.payout.state = 'SENDING';
       try {
         const result = await payPalClient.createPayout(record.payout.body);
-        await applyCreateResult(record, result);
+        await applyCreateResult(record, result, { reconciling: true });
       } catch (error) {
         record.payout.state = 'UNKNOWN_AFTER_SEND';
         record.payout.error = { code: 'CLIENT_ERROR', message: error.message };
+        syncLedger(record);
       }
       return view(record);
     },
