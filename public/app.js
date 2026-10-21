@@ -909,11 +909,12 @@
   function schedulePoll() {
     clearTimeout(state.pollTimer);
     const payout = state.caseView?.payout;
+    // The server reuses a readback younger than 10 s, so polling faster than that would show nothing new.
     if (payout?.state === 'SENT' && payout.batchId && state.pollCount < 6) {
       state.pollTimer = setTimeout(async () => {
         state.pollCount += 1;
         await refreshPayout();
-      }, 3000);
+      }, 10_000);
     } else if (payout?.state !== 'SENT') {
       state.pollCount = 0;
     }

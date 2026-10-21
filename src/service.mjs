@@ -36,6 +36,9 @@ export const LIMITS = Object.freeze({ maxDocuments: 12, maxDocumentChars: 60_000
  */
 export const PASSCODE_LOCKOUT = Object.freeze({ maxFailures: 20, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
 
+/** A payout read back from PayPal less than this long ago is not read again on GET /api/payout/:id. */
+export const READBACK_REUSE_MS = 10_000;
+
 export class ServiceError extends Error {
   /**
    * @param {number} status HTTP status
@@ -324,6 +327,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         readbackError: record.payout.readbackError ?? null,
         receipt: record.payout.receipt ?? null,
         receiptSha256: record.payout.receiptSha256 ?? null,
+        lastReadbackAt: record.payout.lastReadbackAt ? new Date(record.payout.lastReadbackAt).toISOString() : null,
         attempts: record.payout.attempts,
       },
       paypal: { mode: config.paypal.mode, environment: paypalEnvironment },
@@ -332,6 +336,8 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
 
   async function readBackInto(record, delaysMs) {
     const payout = record.payout;
+    // Marked before the call, so status requests that arrive meanwhile reuse this readback.
+    payout.lastReadbackAt = now();
     try {
       const { batch, attempts, readAt } = await payPalClient.readBack(payout.batchId, { delaysMs });
       const { receipt, sha256 } = buildReceipt({
@@ -653,13 +659,15 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
     },
 
     /**
-     * Read the payout back from PayPal (GET only, never sends money).
+     * Read the payout back from PayPal (GET only, never sends money). A readback younger than
+     * READBACK_REUSE_MS is reused, so repeated status requests cannot flood the PayPal app.
      * @param {string} caseId
      */
     async refreshPayout(caseId) {
       const record = requireCase(caseId);
       if (!record.payout) throw new ServiceError(409, 'NOT_SENT', 'Nothing was sent to PayPal for this case yet.');
-      if (record.payout.batchId && payPalClient && record.payout.state !== 'SENDING') {
+      const recent = record.payout.lastReadbackAt !== undefined && now() - record.payout.lastReadbackAt < READBACK_REUSE_MS;
+      if (record.payout.batchId && payPalClient && record.payout.state !== 'SENDING' && !recent) {
         await readBackInto(record, [0]);
         touch(record, 'READBACK', { state: record.payout.state });
         syncLedger(record);

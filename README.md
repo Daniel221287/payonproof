@@ -178,7 +178,7 @@ There is no approval tool, and no tool accepts the approver passcode. An agent v
 | `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
 | `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 20 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`, with the time approvals reopen) |
 | `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back; `409 INVOICE_ALREADY_PAID` when another case already sent this invoice |
-| `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything) |
+| `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything; a readback younger than 10 s is reused, so status requests cannot flood the PayPal app) |
 | `POST /api/payout/:id/reconcile` | Resolve `UNKNOWN_AFTER_SEND` with the same `sender_batch_id` |
 | `POST /mcp` | MCP Streamable HTTP endpoint |
 

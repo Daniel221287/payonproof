@@ -170,7 +170,7 @@ export function createMcpServer({ service, approvalUrlFor }) {
 
   server.registerTool('payonproof_payout_status', {
     title: 'Read a payout back from PayPal',
-    description: 'Reads the payout batch of a case back from PayPal and returns the receipt: batch status, item status, transaction id and whether it matches the approval.',
+    description: 'Reads the payout batch of a case back from PayPal and returns the receipt: batch status, item status, transaction id and whether it matches the approval. A readback younger than 10 seconds is reused.',
     inputSchema: { caseId: z.string().min(1).max(64) },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   }, async ({ caseId }) => {

@@ -291,3 +291,30 @@ test('a message written by an agent must pass the AI fact check; a failing one c
   await assert.rejects(service.pay(caseView.id, { approvalToken: approval.token }), (e) => e.code === 'APPROVAL_REVOKED');
   assert.equal(service.updateMessage(caseView.id, 'Anything a person writes.').message.label, 'Edited by a person', 'a person may write anything');
 });
+
+test('status requests reuse a PayPal readback younger than 10 seconds', async () => {
+  let t = Date.parse('2026-10-21T20:00:00Z');
+  const config = resolveConfig({ PAYPAL_MOCK: '1' });
+  const mock = createMockPayPal();
+  let readbacks = 0;
+  const countingFetch = (url, init) => {
+    if (init?.method === 'GET' && String(url).includes('/v1/payments/payouts/')) readbacks += 1;
+    return mock.fetch(url, init);
+  };
+  const service = createService({
+    config, samples, approvals: createApprovalRegistry({ now: () => t }), now: () => t, readbackDelaysMs: [0],
+    payPalClient: createPayPalClient({ ...config.paypal, fetch: countingFetch, now: () => t }), aiProvider: createAiProvider(config.ai),
+  });
+  const caseView = await service.analyze({ sampleId: 'honest' });
+  const { approval } = service.approve(caseView.id, { previewHash: caseView.proposal.previewHash, confirm: true });
+  await service.pay(caseView.id, { approvalToken: approval.token });
+  assert.equal(readbacks, 1, 'the pay step reads the payout back once');
+  t += 5_000;
+  await Promise.all([service.refreshPayout(caseView.id), service.refreshPayout(caseView.id), service.refreshPayout(caseView.id)]);
+  assert.equal(readbacks, 1, 'requests within 10 s reuse the last readback');
+  t += 5_000;
+  const [first, second] = await Promise.all([service.refreshPayout(caseView.id), service.refreshPayout(caseView.id)]);
+  assert.equal(readbacks, 2, 'after 10 s one new readback serves concurrent requests');
+  assert.equal(first.payout.lastReadbackAt, '2026-10-21T20:00:10.000Z');
+  assert.equal(second.payout.lastReadbackAt, first.payout.lastReadbackAt);
+});
