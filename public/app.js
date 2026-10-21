@@ -427,7 +427,7 @@
     const secondary = NARROW.matches
       ? `${money(line.payableCents)} of ${money(line.claimedCents)}`
       : line.kind === 'labour' ? line.role : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
-    return h('div', { class: 'cell-subject' }, h('strong', { text: line.subject }), h('span', { text: secondary }));
+    return h('div', { class: 'cell-subject', title: `${line.subject}, ${secondary}` }, h('strong', { text: line.subject }), h('span', { text: secondary }));
   }
   function qtyRenderer(params) {
     const line = params.data;
@@ -721,9 +721,10 @@
     const sent = c.payout && !['NOT_SENT', 'REJECTED'].includes(c.payout.state);
     const configured = state.config.paypal.mode !== 'unconfigured';
     const live = approvalIsLive();
-    button.disabled = !live || sent || !configured || state.busy === 'pay';
+    button.disabled = !live || sent || !configured || state.busy === 'pay' || state.messageDirty;
     let hint;
     if (!configured) hint = 'PayPal is not configured on this server (set sandbox credentials or PAYPAL_MOCK=1).';
+    else if (state.messageDirty && !sent) hint = 'Save or undo your change to the message first.';
     else if (sent) hint = 'This approved payment was sent. The receipt below is what PayPal reports.';
     else if (live) hint = `Ready: ${money(c.proposal.core.payableCents, c.proposal.core.currency)} to ${c.proposal.core.payee.email}.`;
     else if (c.proposal.status === 'BLOCKED') hint = 'This payment is blocked. See the reasons above.';
@@ -928,6 +929,7 @@
       if (dirty !== state.messageDirty) {
         state.messageDirty = dirty;
         renderApprove();
+        renderPay();
       }
     });
     $('#save-message').addEventListener('click', saveMessage);

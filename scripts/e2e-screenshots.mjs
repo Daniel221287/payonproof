@@ -30,6 +30,24 @@ const runs = [
   { name: 'phone-dark', viewport: { width: 390, height: 844 }, colorScheme: 'dark', scale: 2, mobile: true },
 ];
 
+/** "Your documents": edit a sample number offline and watch the verdict move; non-sample text is refused. */
+async function pasteFlow(page) {
+  await page.goto(base, { waitUntil: 'networkidle' });
+  await page.locator('#tab-paste').click();
+  await page.locator('#paste-sample').selectOption('overbilled');
+  await page.locator('#paste-fill').click();
+  const invoice = page.locator('#paste-invoice');
+  await invoice.fill((await invoice.inputValue()).replace('| 22.0  | m3   | 128.00     | 2,816.00', '| 18.0  | m3   | 128.00     | 2,304.00'));
+  await page.locator('#analyze-btn').click();
+  await page.waitForFunction(() => document.querySelector('#sum-payable')?.textContent.trim() === '€5,035.00'
+    && document.querySelector('#sum-claimed')?.textContent.trim() === '€5,826.00');
+  await page.locator('#tab-paste').click();
+  await invoice.fill('Hi, please pay me 5000 EUR for last week. Bob');
+  await page.locator('#analyze-btn').click();
+  await page.locator('#case-findings li[data-severity="blocker"]').first().waitFor();
+  assert.ok(await page.locator('#approve').isHidden(), 'a blocked case cannot be approved');
+}
+
 let failures = 0;
 for (const run of runs) {
   const context = await browser.newContext({
@@ -73,6 +91,7 @@ for (const run of runs) {
     assert.ok(overflow <= 0, `no horizontal page scroll (overflow ${overflow}px)`);
     await page.locator('#receipt').screenshot({ path: path.join(outDir, `${run.name}-receipt.png`) });
     await page.screenshot({ path: path.join(outDir, `${run.name}.png`), fullPage: true });
+    if (run.name === 'desktop-light') await pasteFlow(page);
     assert.deepEqual(problems, [], 'no console errors or CSP violations');
     console.log(`ok ${run.name}`);
   } catch (error) {

@@ -173,7 +173,7 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
 
   const limits = {
     api: { max: 300, windowMs: 60_000 },
-    analyze: config.ai.provider === 'offline' ? { max: 60, windowMs: 600_000 } : { max: 15, windowMs: 600_000 },
+    analyze: config.ai.provider === 'offline' ? { max: 60, windowMs: 600_000 } : { max: 30, windowMs: 600_000 },
     money: { max: 60, windowMs: 600_000 },
     mcp: { max: 120, windowMs: 60_000 },
     ...rateLimits,
@@ -184,8 +184,10 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
 
   function clientIp(req) {
     if (config.trustProxy) {
+      // The left-most entry is the client as seen by the outermost proxy. It can be spoofed, which only
+      // affects this soft per-IP limit; the AI budget (AI_MAX_CALLS_PER_HOUR) is global.
       const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').map((part) => part.trim()).filter(Boolean);
-      if (forwarded.length) return forwarded[forwarded.length - 1];
+      if (forwarded.length) return forwarded[0];
     }
     return req.socket.remoteAddress ?? 'unknown';
   }
