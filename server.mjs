@@ -182,12 +182,16 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
   const indexTemplate = await readFile(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
   const staticCache = new Map();
 
+  /**
+   * The client address used for per-IP limits. Behind a trusted proxy it is the right-most
+   * X-Forwarded-For entry: the one our own proxy appended. Every entry to its left was sent by the
+   * client and can be forged, so it is never used.
+   * @param {import('node:http').IncomingMessage} req
+   */
   function clientIp(req) {
     if (config.trustProxy) {
-      // The left-most entry is the client as seen by the outermost proxy. It can be spoofed, which only
-      // affects this soft per-IP limit; the AI budget (AI_MAX_CALLS_PER_HOUR) is global.
       const forwarded = String(req.headers['x-forwarded-for'] ?? '').split(',').map((part) => part.trim()).filter(Boolean);
-      if (forwarded.length) return forwarded[0];
+      if (forwarded.length) return forwarded[forwarded.length - 1];
     }
     return req.socket.remoteAddress ?? 'unknown';
   }

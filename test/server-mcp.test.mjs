@@ -136,6 +136,19 @@ test('per-IP rate limit answers 429 with Retry-After', async () => {
   assert.deepEqual(statuses, [200, 200, 200, 429, 429]);
 });
 
+test('behind a trusted proxy the right-most X-Forwarded-For entry counts, so a forged left part changes nothing', async () => {
+  const proxied = await createApp({ env: { PAYPAL_MOCK: '1', TRUST_PROXY: '1', LOG_REQUESTS: '0' }, quiet: true, rateLimits: { api: { max: 3, windowMs: 60_000 } } });
+  const { port } = await proxied.listen(0, '127.0.0.1');
+  const get = (forwardedFor) => fetch(`http://127.0.0.1:${port}/api/config`, { headers: { 'x-forwarded-for': forwardedFor } });
+  const spoofed = [];
+  // The client rotates what it sends; the proxy appends the real address (203.0.113.9) at the end.
+  for (let i = 0; i < 5; i += 1) spoofed.push((await get(`198.51.100.${i}, 203.0.113.9`)).status);
+  const otherClient = (await get('198.51.100.1, 203.0.113.10')).status;
+  await proxied.close();
+  assert.deepEqual(spoofed, [200, 200, 200, 429, 429]);
+  assert.equal(otherClient, 200, 'a different proxy-appended address has its own bucket');
+});
+
 test('MCP: protocol 2025-11-25 is negotiated over Streamable HTTP', async () => {
   const response = await fetch(`${base}/mcp`, {
     method: 'POST',

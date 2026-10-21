@@ -184,7 +184,7 @@ State-changing requests must be JSON and, when they carry an `Origin`, come from
 - Approval is explicit, exact (hash-bound), single-use, short-lived and withdrawn by any change. It can only be given from the page: the endpoint requires a same-origin browser request, and `APPROVER_PASSCODE` can add a passcode.
 - Three independent layers prevent double payment (see above); unknown outcomes are reconciled, never blindly retried.
 - Sandbox only; startup refuses unsafe PayPal settings.
-- HTTP hardening: strict Content-Security-Policy (scripts only from the same origin, no inline scripts; `<style>` elements need a per-request nonce, which the grid uses), Host allow-list against DNS rebinding, same-origin checks on state-changing requests, JSON-only bodies, 768 KB body limit, per-IP rate limits, no `innerHTML` with data in the client.
+- HTTP hardening: strict Content-Security-Policy (scripts only from the same origin, no inline scripts; `<style>` elements need a per-request nonce, which the grid uses), Host allow-list against DNS rebinding, same-origin checks on state-changing requests, JSON-only bodies, 768 KB body limit, per-IP rate limits (behind a proxy the client address is the right-most `X-Forwarded-For` entry, the one the proxy appended; entries a client adds to the left are ignored), no `innerHTML` with data in the client.
 - Secrets are read from the environment or `.env` and are never printed, logged or sent anywhere except their own API.
 
 ## PayPal sandbox setup
@@ -220,7 +220,7 @@ Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and opti
 1. Push the repository to GitHub.
 2. In Render: **New > Web Service**, connect the repository. Runtime **Node**, build command `npm ci`, start command `npm start`, instance type **Free**, health check path `/health`. (Or **New > Blueprint** with the included `render.yaml`.)
 3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), an AI key (`NEBIUS_API_KEY` or `GEMINI_API_KEY`), `AI_MAX_CALLS_PER_HOUR`, `AI_MAX_CALLS_PER_DAY`, `APPROVER_PASSCODE`, `MCP_BEARER_TOKEN`.
-4. Render sets `PORT` and `RENDER_EXTERNAL_HOSTNAME`; the server then listens on `0.0.0.0`, allows that host name and trusts the proxy headers. Add custom domains to `ALLOWED_HOSTS`.
+4. Render sets `PORT` and `RENDER_EXTERNAL_HOSTNAME`; the server then listens on `0.0.0.0`, allows that host name and trusts the proxy headers (it takes the right-most `X-Forwarded-For` address, which Render's proxy appends). Add custom domains to `ALLOWED_HOSTS`.
 
 Free instances sleep when idle; cases, approvals and receipts live in memory and are gone after a restart.
 
