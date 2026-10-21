@@ -114,3 +114,14 @@ test('offline demo: a steel fixer billed as foreman (role upcoding) is paid at t
   assert.match(line1.reason, /^Invoiced as Foreman \(€47\.00\/h\); the signed timesheet \(TS-NG-38#1\) says Steel fixer \(€41\.00\/h\)\./);
   assert.equal(result.totals.payableCents, 503500, 'the payable total does not move');
 });
+
+test('offline refusals read as plain sentences: what is wrong, then that offline mode reads only the samples', async () => {
+  const extraction = await extractDocuments([
+    { id: 'c', name: 'Contract', type: 'contract', text: 'Our deal: 40 EUR per hour.' },
+    { id: 'i', name: 'Invoice', type: 'invoice', text: samples.find((s) => s.id === 'honest').documents.find((d) => d.type === 'invoice').text.replace('| 39.50      | 316.00', '| € 36.00    | 316.00') },
+  ], { provider: offline });
+  const { blockers } = assembleCaseInput(extraction);
+  assert.equal(blockers[0].reason, '"Contract" could not be read: This does not start like a sample contract. The offline sample parser only reads the bundled sample layout; other documents need an AI provider (set NEBIUS_API_KEY or GEMINI_API_KEY).');
+  assert.match(blockers[1].reason, /^"Invoice" could not be read: Cannot read the number "€ 36\.00"\. The offline sample parser only reads the bundled sample layout/);
+  for (const blocker of blockers) assert.doesNotMatch(blocker.reason, /\.\)\.|\.\.|\$/, 'no doubled punctuation, no JSON path');
+});

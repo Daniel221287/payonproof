@@ -212,12 +212,12 @@ test('an unreadable document means "cannot verify": no verdicts, no payable figu
   const { service } = setup();
   const caseView = await service.analyze({ documents: honestDocuments({ timesheet: (text) => text.replace('| 8.00  | signed K. Vogelsang', '| 8.00  | OK J.A.') }) });
   assert.deepEqual(caseView.unreadable.map((doc) => doc.name), ['Timesheet TS-BM-38']);
-  assert.match(caseView.unreadable[0].reason, /^Cannot read the sign-off "OK J\.A\."\. The offline sample parser reads only the layout of the bundled samples$/);
+  assert.match(caseView.unreadable[0].reason, /^Cannot read the sign-off "OK J\.A\."\. The offline sample parser only reads the bundled sample layout; other documents need an AI provider \(set NEBIUS_API_KEY or GEMINI_API_KEY\)$/);
   assert.equal(caseView.verification, null, 'no line is judged on missing evidence');
   assert.equal(caseView.message, null, 'no message is built from missing evidence');
   assert.equal(caseView.proposal, null);
   assert.equal(caseView.blockers[0].code, 'DOCUMENT_REJECTED');
-  assert.equal(caseView.blockers[0].reason, '"Timesheet TS-BM-38" could not be read: Cannot read the sign-off "OK J.A.". The offline sample parser reads only the layout of the bundled samples.');
+  assert.equal(caseView.blockers[0].reason, '"Timesheet TS-BM-38" could not be read: Cannot read the sign-off "OK J.A.". The offline sample parser only reads the bundled sample layout; other documents need an AI provider (set NEBIUS_API_KEY or GEMINI_API_KEY).');
   assert.doesNotMatch(caseView.blockers[0].reason, /\$|\.\./, 'no JSON path, no double period');
   assert.equal(caseView.invoice.invoiceNumber, 'BM-2026-118', 'what was read is still shown');
   assert.throws(() => service.approve(caseView.id, { previewHash: 'a'.repeat(64), confirm: true }), (e) => e.code === 'NOT_PAYABLE');

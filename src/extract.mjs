@@ -9,7 +9,7 @@
  */
 import { AiError } from './ai.mjs';
 import { canonicalJson, sha256Hex } from './canonical.mjs';
-import { OfflineParseError, parseOffline } from './offline-parser.mjs';
+import { NOT_SAMPLE, OfflineParseError, parseOffline } from './offline-parser.mjs';
 import { DOCUMENT_TYPES, validateExtraction } from './schema.mjs';
 
 export const PROMPT_VERSION = 'extract-v2';
@@ -100,8 +100,8 @@ async function extractOne(doc, provider, clock) {
   } catch (error) {
     if (error instanceof OfflineParseError || error instanceof AiError) {
       // Say when a document was refused because offline mode reads only the sample layout.
-      const message = error instanceof OfflineParseError && !/offline sample parser/i.test(error.message)
-        ? `${error.message.replace(/\.+$/, '')}. The offline sample parser reads only the layout of the bundled samples.`
+      const message = error instanceof OfflineParseError && !error.message.includes(NOT_SAMPLE)
+        ? `${error.message.replace(/\.+$/, '')}. ${NOT_SAMPLE}`
         : error.message;
       return {
         ...base, status: 'rejected', errors: [{ path: '$', message }], warnings: [], data: null,

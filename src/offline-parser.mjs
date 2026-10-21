@@ -21,7 +21,8 @@ export class OfflineParseError extends Error {
   }
 }
 
-const NOT_SAMPLE = 'The offline sample parser only reads the bundled sample layout. Set AI_PROVIDER=nebius, gemini or openai to read other documents.';
+/** Appended to every refusal, so the reader knows it is an offline-mode limit, not a broken document. */
+export const NOT_SAMPLE = 'The offline sample parser only reads the bundled sample layout; other documents need an AI provider (set NEBIUS_API_KEY or GEMINI_API_KEY).';
 
 /** First-line titles of each document type, with the number locale they imply. */
 const TITLES = {
@@ -66,7 +67,7 @@ function detectLocale(type, text) {
   for (const [prefix, locale] of TITLES[type] ?? []) {
     if (title.startsWith(prefix)) return locale;
   }
-  throw new OfflineParseError(`${NOT_SAMPLE} (This does not start like a sample ${type.replace('_', ' ')}.)`);
+  throw new OfflineParseError(`This does not start like a sample ${type.replace('_', ' ')}. ${NOT_SAMPLE}`);
 }
 
 function readHeader(lines) {
@@ -86,7 +87,7 @@ function pick(fields, name) {
 
 function requireField(fields, name) {
   const value = pick(fields, name);
-  if (value === null || value === '') throw new OfflineParseError(`${NOT_SAMPLE} (Missing field "${LABELS[name][0]}".)`);
+  if (value === null || value === '') throw new OfflineParseError(`The field "${LABELS[name][0]}" is missing. ${NOT_SAMPLE}`);
   return value;
 }
 
@@ -145,7 +146,7 @@ function parseContract(text, locale) {
       unit,
       price: parseLocaleNumber(price, locale),
     }));
-  if (rates.length === 0) throw new OfflineParseError(`${NOT_SAMPLE} (No rate table found.)`);
+  if (rates.length === 0) throw new OfflineParseError(`No rate table found. ${NOT_SAMPLE}`);
   return {
     contractId: requireField(fields, 'contractId'),
     mainContractor: pick(fields, 'mainContractor'),
@@ -165,7 +166,7 @@ function parseInvoice(text, locale) {
   const payeeLine = lines.find((line) => foldText(line).includes('paypal') && /@/.test(line));
   const payeeEmail = payeeLine ? (/[^\s:]+@[^\s]+\.[a-z]{2,}/i.exec(payeeLine)?.[0] ?? null) : null;
   const rows = tableRows(lines, 9).filter((cells) => /^\d+$/.test(cells[0]));
-  if (rows.length === 0) throw new OfflineParseError(`${NOT_SAMPLE} (No invoice lines found.)`);
+  if (rows.length === 0) throw new OfflineParseError(`No invoice lines found. ${NOT_SAMPLE}`);
   const invoiceLines = rows.map(([id, type, subject, role, date, quantity, unit, unitPrice, amount]) => {
     const kind = kindOf(type);
     if (!kind) throw new OfflineParseError(`Unknown line type "${type}" in line ${id}.`);
@@ -213,7 +214,7 @@ function parseTimesheet(text, locale) {
   const lines = text.split(/\r?\n/);
   const fields = readHeader(lines);
   const rows = tableRows(lines, 5).filter((cells) => /^\d/.test(cells[0]));
-  if (rows.length === 0) throw new OfflineParseError(`${NOT_SAMPLE} (No timesheet rows found.)`);
+  if (rows.length === 0) throw new OfflineParseError(`No timesheet rows found. ${NOT_SAMPLE}`);
   return {
     sheetRef: pick(fields, 'sheetRef'),
     siteManager: pick(fields, 'siteManager'),

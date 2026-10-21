@@ -213,12 +213,16 @@
   function renderHeader() {
     const { config } = state;
     const env = $('#env-badge');
-    if (config.paypal.environment === 'live') {
+    const live = config.paypal.environment === 'live';
+    if (live) {
       env.textContent = 'LIVE PayPal: real money';
       env.setAttribute('data-live', '');
     } else {
       env.textContent = 'Sandbox: no real money';
     }
+    $('#footer-money').textContent = live
+      ? 'PayOnProof is open source under the MIT licence. This server is configured for LIVE PayPal: payouts move real money.'
+      : `PayOnProof is open source under the MIT licence. This server pays through ${config.paypal.mode === 'mock' ? 'MOCK PayPal' : 'the PayPal sandbox'}; no real money moves.`;
     const badge = $('#paypal-badge');
     badge.hidden = false;
     badge.removeAttribute('data-mock');
@@ -541,7 +545,7 @@
     grid.setColumnsVisible(['date', 'qty', 'rate', 'claimed', 'payable', 'why'], !NARROW.matches);
     grid.setColumnWidths([{ key: 'id', newWidth: NARROW.matches ? 48 : 64 }, { key: 'verdict', newWidth: NARROW.matches ? 128 : 146 }]);
     grid.refreshCells({ force: true, columns: ['subject'] });
-    $('#grid-hint').textContent = NARROW.matches ? 'Tap a line to see its proof. Swipe the table sideways if needed.' : 'Select a line to see its proof chain below.';
+    $('#grid-hint').textContent = NARROW.matches ? 'Tap a line to see its date, amounts and proof below the table.' : 'Select a line to see its proof chain below.';
   }
 
   function renderGrid(lines) {
@@ -1015,7 +1019,10 @@
       renderHeader();
       renderCasePicker();
     } catch (error) {
-      showError('#analyze-error', new Error(`The server could not be reached: ${error.message}`));
+      // Keep this message: nothing can be verified without the server, so Verify is disabled too.
+      showError('#analyze-error', new Error(`The server could not be reached (${error.message.replace(/\.+$/, '')}). Reload the page to try again.`));
+      $('#case-picker .placeholder-text')?.replaceChildren('Sample cases could not be loaded.');
+      $('#analyze-btn').disabled = true;
       return;
     }
     const caseId = new URLSearchParams(window.location.search).get('case');

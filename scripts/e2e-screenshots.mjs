@@ -65,6 +65,18 @@ async function keyboardFlow(page) {
   assert.equal(await focused(), 'inspector', 'the skip link moves focus past the table');
 }
 
+/** Server unreachable on load: the message stays, Verify is disabled, the picker says why it is empty. */
+async function unreachableFlow(context) {
+  const page = await context.newPage();
+  await page.route('**/api/**', (route) => route.abort('connectionrefused'));
+  await page.goto(base, { waitUntil: 'load' });
+  await page.locator('#analyze-error:not([hidden])').waitFor();
+  assert.match(await page.locator('#analyze-error').textContent(), /^The server could not be reached \(.+\)\. Reload the page to try again\.$/);
+  assert.ok(await page.locator('#analyze-btn').isDisabled(), 'Verify cannot replace the message');
+  assert.equal((await page.locator('#case-picker .placeholder-text').textContent()).trim(), 'Sample cases could not be loaded.');
+  await page.close();
+}
+
 /** The paid-invoice ledger: the invoice just paid cannot be paid again through a new case. */
 async function paidTwiceFlow(page) {
   await page.goto(base, { waitUntil: 'networkidle' });
@@ -125,9 +137,11 @@ for (const run of runs) {
     assert.ok(overflow <= 0, `no horizontal page scroll (overflow ${overflow}px)`);
     await page.locator('#receipt').screenshot({ path: path.join(outDir, `${run.name}-receipt.png`) });
     await page.screenshot({ path: path.join(outDir, `${run.name}.png`), fullPage: true });
+    if (run.mobile) assert.match(await page.locator('#grid-hint').textContent(), /^Tap a line to see its date, amounts and proof below the table\.$/);
     if (run.name === 'desktop-light') {
       await paidTwiceFlow(page);
       await pasteFlow(page);
+      await unreachableFlow(context);
     }
     assert.deepEqual(problems, [], 'no console errors or CSP violations');
     console.log(`ok ${run.name}`);

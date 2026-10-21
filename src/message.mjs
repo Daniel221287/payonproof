@@ -308,6 +308,6 @@ export async function draftMessage({ provider, facts }) {
     return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed the fact check (missing ${missing.slice(0, 3).join(', ')}), so the template was used.` };
   } catch (error) {
     if (!(error instanceof AiError)) throw error;
-    return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed (${error.message}), so the template was used.` };
+    return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed (${error.message.replace(/\.+$/, '')}), so the template was used.` };
   }
 }
