@@ -165,7 +165,7 @@ Live runs on 21–22 October 2026 against Token Factory, `nvidia/NVIDIA-Nemotron
 | --- | --- | --- | --- | --- |
 | Reasoning on, JSON mode (prompt `extract-v1`) | 16/16 | 4/4 | 4/4 | 42–88 s |
 | Reasoning off, JSON mode (`extract-v2`) | 14/16; 2 cases fell back to the offline parser | 4/4, 2 of them only through the fallback | 2/4 | 9–18 s |
-| Reasoning off, JSON Schema (`extract-v3`, the default), `npm run live-check -- --runs 3` | 48/48 | 12/12 | 11/12, 2 of them on the second attempt; 1 template | 3.4–6.4 s |
+| Reasoning off, JSON Schema (`extract-v3`, the default), 5 runs of `npm run live-check` | 80/80 | 20/20 | 19/20, 2 of them on the second attempt; 1 template | 3.4–6.4 s |
 | Reasoning on, JSON Schema (`extract-v3`, `NEBIUS_REASONING=on`, `max_tokens` 16384), `--runs 2` | 32/32 | 8/8 | 8/8, 2 of them on the second attempt | 15–78 s |
 
 ### Failure cases we hit, and what changed
