@@ -1,0 +1,13 @@
+WEEKLY TIMESHEET
+Sheet: TS-NG-38
+Site: Logistics Hall 7, Hamburg
+Crew: Northgate Steel Crew Sp. z o.o.
+Week: 38/2026
+Site manager: Katrin Vogelsang
+
+Date       | Worker            | Trade       | Hours | Site manager sign-off
+2026-09-14 | Kordecki, Adam    | Steel fixer | 9.00  | signed K. Vogelsang
+2026-09-14 | Lisowiec, Bartosz | Steel fixer | 9.00  | signed K. Vogelsang
+2026-09-15 | Kordecki, Adam    | Steel fixer | 9.00  | signed K. Vogelsang
+2026-09-16 | Lisowiec, Bartosz | Steel fixer | 8.00  | NOT SIGNED
+2026-09-17 | Tkachuk, Ihor     | Foreman     | 8.00  | signed K. Vogelsang

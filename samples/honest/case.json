@@ -1,0 +1,11 @@
+{
+  "id": "honest",
+  "title": "Honest invoice",
+  "summary": "Every hour is on a signed timesheet and the plywood matches the delivery note. Pays in full.",
+  "documents": [
+    { "id": "contract", "type": "contract", "name": "Rate sheet SC-2026-024", "file": "contract.txt" },
+    { "id": "invoice", "type": "invoice", "name": "Invoice BM-2026-118", "file": "invoice.txt" },
+    { "id": "timesheet", "type": "timesheet", "name": "Timesheet TS-BM-38", "file": "timesheet.txt" },
+    { "id": "delivery", "type": "delivery_notes", "name": "Delivery note DN-22107", "file": "delivery-notes.txt" }
+  ]
+}

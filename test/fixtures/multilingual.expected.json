@@ -1,0 +1,13 @@
+{
+  "sample": "multilingual",
+  "totals": { "claimedCents": 209000, "payableCents": 180000, "disputedCents": 29000 },
+  "caseFindings": [],
+  "lines": [
+    { "id": "1", "verdict": "PROVEN", "findings": [], "payableCents": 34200 },
+    { "id": "2", "verdict": "PROVEN", "findings": [], "payableCents": 27900 },
+    { "id": "3", "verdict": "PROVEN", "findings": [], "payableCents": 30400 },
+    { "id": "4", "verdict": "UNSIGNED", "findings": ["UNSIGNED"], "payableCents": 0 },
+    { "id": "5", "verdict": "PROVEN", "findings": [], "payableCents": 50400 },
+    { "id": "6", "verdict": "OVER_CAP", "findings": ["OVER_CAP"], "payableCents": 37100 }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "sample": "honest",
+  "totals": { "claimedCents": 227063, "payableCents": 227063, "disputedCents": 0 },
+  "caseFindings": [],
+  "lines": [
+    { "id": "1", "verdict": "PROVEN", "findings": [], "payableCents": 31600 },
+    { "id": "2", "verdict": "PROVEN", "findings": [], "payableCents": 26400 },
+    { "id": "3", "verdict": "PROVEN", "findings": [], "payableCents": 30613 },
+    { "id": "4", "verdict": "PROVEN", "findings": [], "payableCents": 28050 },
+    { "id": "5", "verdict": "PROVEN", "findings": [], "payableCents": 110400 }
+  ]
+}

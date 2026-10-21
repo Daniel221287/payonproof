@@ -1,0 +1,15 @@
+SUBCONTRACT RATE SHEET
+Contract no.: SC-2026-040
+Main contractor: Quaybright Construction GmbH
+Subcontractor: Sunflower Facade Crew FOP
+Payee (PayPal): crew-sunflower@example.com
+Currency: EUR
+Correspondence language: uk
+Payment cap per invoice: 8,000.00
+
+Kind     | Role / item             | Also called | Code  | Unit | Rate
+Labour   | Facade fitter           | Cladder     |       | h    | 37.00
+Material | Facade anchor set FA-12 |             | FA-12 | pcs  | 3.20
+
+Only hours on timesheets signed by the main contractor's site manager are paid.
+Materials are paid against delivery notes received on site.

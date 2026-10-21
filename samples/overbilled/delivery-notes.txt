@@ -1,0 +1,29 @@
+DELIVERY NOTE
+Note no.: LS-4471
+Date: 2026-09-16
+Supplier: Example Ready-Mix Works GmbH
+Delivered to: Logistics Hall 7, Hamburg
+Item: Ready-mix concrete C30/37
+Code: RMC-C30
+Quantity: 9.0 m3
+Received by: K. Vogelsang
+----
+DELIVERY NOTE
+Note no.: LS-4472
+Date: 2026-09-16
+Supplier: Example Ready-Mix Works GmbH
+Delivered to: Logistics Hall 7, Hamburg
+Item: Ready-mix concrete C30/37
+Code: RMC-C30
+Quantity: 9.0 m3
+Received by: K. Vogelsang
+----
+DELIVERY NOTE
+Note no.: LS-4480
+Date: 2026-09-15
+Supplier: Example Steel Trading GmbH
+Delivered to: Logistics Hall 7, Hamburg
+Item: Rebar B500B
+Code: RB-500B
+Quantity: 1.20 t
+Received by: K. Vogelsang

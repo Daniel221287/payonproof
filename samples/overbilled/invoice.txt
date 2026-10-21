@@ -1,0 +1,21 @@
+INVOICE
+Invoice no.: NG-2026-0917
+Invoice date: 2026-09-21
+From: Northgate Steel Crew Sp. z o.o., ul. Przykladowa 12, 00-001 Przykladowo, Poland
+To: Quaybright Construction GmbH, Musterkai 1, 20000 Hamburg, Germany
+Contract: SC-2026-031
+Site: Logistics Hall 7, Hamburg
+Currency: EUR
+
+Pos | Type     | Worker / item                       | Role        | Date       | Qty   | Unit | Unit price | Amount
+1   | Labour   | Adam Kordecki                       | Steel fixer | 2026-09-14 | 9.00  | h    | 41.00      | 369.00
+2   | Labour   | Bartosz Lisowiec                    | Steel fixer | 2026-09-14 | 9.00  | h    | 41.00      | 369.00
+3   | Labour   | Adam Kordecki                       | Steel fixer | 2026-09-15 | 9.00  | h    | 41.00      | 369.00
+4   | Labour   | Adam Kordecki                       | Steel fixer | 2026-09-15 | 9.00  | h    | 41.00      | 369.00
+5   | Labour   | Bartosz Lisowiec                    | Steel fixer | 2026-09-16 | 8.00  | h    | 41.00      | 328.00
+6   | Labour   | Ihor Tkachuk                        | Foreman     | 2026-09-17 | 10.00 | h    | 47.00      | 470.00
+7   | Material | Ready-mix concrete C30/37 (RMC-C30) |             | 2026-09-16 | 22.0  | m3   | 128.00     | 2,816.00
+8   | Material | Rebar B500B (RB-500B)               |             | 2026-09-15 | 1.20  | t    | 1,040.00   | 1,248.00
+
+Total: 6,338.00
+Please pay via PayPal to crew-north@example.com

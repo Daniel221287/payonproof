@@ -1,0 +1,9 @@
+DELIVERY NOTE
+Note no.: DN-22107
+Date: 2026-09-15
+Supplier: Example Timber Supply GmbH
+Delivered to: Logistics Hall 7, Hamburg
+Item: Plywood formwork sheet 21 mm
+Code: PFS-21
+Quantity: 24 pcs
+Received by: K. Vogelsang

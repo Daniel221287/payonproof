@@ -1,0 +1,19 @@
+FAKTURA
+Numer faktury: 14/09/2026
+Data wystawienia: 21.09.2026
+Sprzedawca: Ekipa Dachowa Jaskółka s.c., ul. Przykładowa 7, 00-001 Przykładowo, Polska
+Nabywca: Quaybright Construction GmbH, Musterkai 1, 20000 Hamburg, Niemcy
+Umowa: NU-2026-077
+Budowa: Hala logistyczna 7, Hamburg
+Waluta: EUR
+
+Lp. | Rodzaj    | Pracownik / materiał             | Stanowisko | Data       | Ilość | J.m.  | Cena jedn. | Wartość
+1   | Robocizna | Paweł Grzybowiec                 | Dekarz     | 16.09.2026 | 9,00  | godz. | 38,00      | 342,00
+2   | Robocizna | Mykola Bondar                    | Pomocnik   | 16.09.2026 | 9,00  | godz. | 31,00      | 279,00
+3   | Robocizna | Paweł Grzybowiec                 | Dekarz     | 17.09.2026 | 8,00  | godz. | 38,00      | 304,00
+4   | Robocizna | Mykola Bondar                    | Pomocnik   | 17.09.2026 | 8,00  | godz. | 31,00      | 248,00
+5   | Materiał  | Papa wierzchniego krycia (BSO-5) |            | 16.09.2026 | 12    | rol.  | 42,00      | 504,00
+6   | Materiał  | Papa podkładowa (BSU-4)          |            | 16.09.2026 | 14    | rol.  | 29,50      | 413,00
+
+Razem do zapłaty: 2 090,00 EUR
+Płatność: PayPal ekipa-jaskolka@example.com

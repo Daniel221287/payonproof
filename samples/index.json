@@ -1,0 +1,4 @@
+{
+  "note": "All companies, people, addresses and email addresses in these samples are fictional.",
+  "cases": ["overbilled", "honest", "rate-drift", "multilingual"]
+}

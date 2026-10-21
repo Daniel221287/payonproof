@@ -1,0 +1,11 @@
+{
+  "id": "overbilled",
+  "title": "Overbilled invoice",
+  "summary": "A repeated line, a day nobody signed, two foreman hours too many and 22 m³ of concrete invoiced where 18 m³ arrived.",
+  "documents": [
+    { "id": "contract", "type": "contract", "name": "Rate sheet SC-2026-031", "file": "contract.txt" },
+    { "id": "invoice", "type": "invoice", "name": "Invoice NG-2026-0917", "file": "invoice.txt" },
+    { "id": "timesheet", "type": "timesheet", "name": "Timesheet TS-NG-38", "file": "timesheet.txt" },
+    { "id": "delivery", "type": "delivery_notes", "name": "Delivery notes LS-4471, LS-4472, LS-4480", "file": "delivery-notes.txt" }
+  ]
+}

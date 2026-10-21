@@ -1,0 +1,18 @@
+INVOICE
+Invoice no.: BM-2026-118
+Invoice date: 2026-09-21
+From: Birchline Montage s.c., ul. Przykladowa 4, 00-001 Przykladowo, Poland
+To: Quaybright Construction GmbH, Musterkai 1, 20000 Hamburg, Germany
+Contract: SC-2026-024
+Site: Logistics Hall 7, Hamburg
+Currency: EUR
+
+Pos | Type     | Worker / item                         | Role               | Date       | Qty  | Unit | Unit price | Amount
+1   | Labour   | Tomasz Brzezina                       | Formwork carpenter | 2026-09-14 | 8.00 | h    | 39.50      | 316.00
+2   | Labour   | Kamil Sośnicki                        | Labourer           | 2026-09-14 | 8.00 | h    | 33.00      | 264.00
+3   | Labour   | Tomasz Brzezina                       | Formwork carpenter | 2026-09-15 | 7.75 | h    | 39.50      | 306.13
+4   | Labour   | Kamil Sośnicki                        | Labourer           | 2026-09-15 | 8.50 | h    | 33.00      | 280.50
+5   | Material | Plywood formwork sheet 21 mm (PFS-21) |                    | 2026-09-15 | 24   | pcs  | 46.00      | 1,104.00
+
+Total: 2,270.63
+Please pay via PayPal to crew-birchline@example.com

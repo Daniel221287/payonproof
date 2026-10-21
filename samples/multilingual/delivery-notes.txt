@@ -1,0 +1,19 @@
+LIEFERSCHEIN
+Lieferschein Nr.: LS-7710
+Datum: 16.09.2026
+Lieferant: Beispiel Dachbaustoffe GmbH
+Lieferadresse: Logistikhalle 7, Hamburg
+Artikel: Bitumen-Schweißbahn Oberlage
+Art.-Nr.: BSO-5
+Menge: 12 Rollen
+Empfangen: K. Vogelsang
+----
+LIEFERSCHEIN
+Lieferschein Nr.: LS-7711
+Datum: 16.09.2026
+Lieferant: Beispiel Dachbaustoffe GmbH
+Lieferadresse: Logistikhalle 7, Hamburg
+Artikel: Bitumen-Schweißbahn Unterlage
+Art.-Nr.: BSU-4
+Menge: 14 Rollen
+Empfangen: K. Vogelsang

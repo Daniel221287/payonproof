@@ -1,0 +1,12 @@
+WEEKLY TIMESHEET
+Sheet: TS-SF-38
+Site: Logistics Hall 7, Hamburg
+Crew: Sunflower Facade Crew FOP
+Week: 38/2026
+Site manager: Katrin Vogelsang
+
+Date       | Worker        | Trade         | Hours | Site manager sign-off
+2026-09-14 | Hnatiuk, Oleh | Facade fitter | 8.00  | signed K. Vogelsang
+2026-09-14 | Petryk, Vasyl | Facade fitter | 8.00  | signed K. Vogelsang
+2026-09-15 | Hnatiuk, Oleh | Facade fitter | 8.00  | signed K. Vogelsang
+2026-09-15 | Petryk, Vasyl | Facade fitter | 7.50  | signed K. Vogelsang

@@ -1,0 +1,17 @@
+NACHUNTERNEHMERVERTRAG – PREISBLATT
+Vertrag Nr.: NU-2026-077
+Auftraggeber: Quaybright Construction GmbH
+Nachunternehmer: Ekipa Dachowa Jaskółka s.c.
+Zahlungsempfänger (PayPal): ekipa-jaskolka@example.com
+Währung: EUR
+Korrespondenzsprache: pl
+Zahlungsobergrenze je Rechnung: 1.800,00
+
+Typ      | Tätigkeit / Material          | Auch genannt             | Art.-Nr. | Einheit | Satz
+Lohn     | Dachdecker                    | Dekarz                   |          | Std.    | 38,00
+Lohn     | Helfer                        | Pomocnik                 |          | Std.    | 31,00
+Material | Bitumen-Schweißbahn Oberlage  | Papa wierzchniego krycia | BSO-5    | Rolle   | 42,00
+Material | Bitumen-Schweißbahn Unterlage | Papa podkładowa          | BSU-4    | Rolle   | 29,50
+
+Vergütet werden nur Stunden laut von der Bauleitung unterschriebenen Stundenzetteln.
+Material wird nach Lieferschein vergütet.

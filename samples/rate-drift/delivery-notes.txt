@@ -1,0 +1,9 @@
+DELIVERY NOTE
+Note no.: DN-5521
+Date: 2026-09-15
+Supplier: Example Fixings GmbH
+Delivered to: Logistics Hall 7, Hamburg
+Item: Facade anchor set FA-12
+Code: FA-12
+Quantity: 180 pcs
+Received by: K. Vogelsang

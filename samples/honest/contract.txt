@@ -1,0 +1,16 @@
+SUBCONTRACT RATE SHEET
+Contract no.: SC-2026-024
+Main contractor: Quaybright Construction GmbH
+Subcontractor: Birchline Montage s.c.
+Payee (PayPal): crew-birchline@example.com
+Currency: EUR
+Correspondence language: en
+Payment cap per invoice: 10,000.00
+
+Kind     | Role / item                  | Also called | Code   | Unit | Rate
+Labour   | Formwork carpenter           |             |        | h    | 39.50
+Labour   | Labourer                     | Helper      |        | h    | 33.00
+Material | Plywood formwork sheet 21 mm |             | PFS-21 | pcs  | 46.00
+
+Only hours on timesheets signed by the main contractor's site manager are paid.
+Materials are paid against delivery notes received on site.

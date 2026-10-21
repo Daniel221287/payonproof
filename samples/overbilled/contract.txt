@@ -1,0 +1,17 @@
+SUBCONTRACT RATE SHEET
+Contract no.: SC-2026-031
+Main contractor: Quaybright Construction GmbH
+Subcontractor: Northgate Steel Crew Sp. z o.o.
+Payee (PayPal): crew-north@example.com
+Currency: EUR
+Correspondence language: en
+Payment cap per invoice: 15,000.00
+
+Kind     | Role / item               | Also called | Code    | Unit | Rate
+Labour   | Steel fixer               | Rebar fixer |         | h    | 41.00
+Labour   | Foreman                   |             |         | h    | 47.00
+Material | Ready-mix concrete C30/37 |             | RMC-C30 | m3   | 128.00
+Material | Rebar B500B               |             | RB-500B | t    | 1,040.00
+
+Only hours on timesheets signed by the main contractor's site manager are paid.
+Materials are paid against delivery notes received on site.

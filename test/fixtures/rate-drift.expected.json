@@ -1,0 +1,12 @@
+{
+  "sample": "rate-drift",
+  "totals": { "claimedCents": 182850, "payableCents": 174150, "disputedCents": 8700 },
+  "caseFindings": ["PAYEE_MISMATCH"],
+  "lines": [
+    { "id": "1", "verdict": "RATE_ABOVE_CONTRACT", "findings": ["RATE_ABOVE_CONTRACT"], "payableCents": 29600 },
+    { "id": "2", "verdict": "RATE_ABOVE_CONTRACT", "findings": ["RATE_ABOVE_CONTRACT"], "payableCents": 29600 },
+    { "id": "3", "verdict": "MATH_ERROR", "findings": ["MATH_ERROR"], "payableCents": 29600 },
+    { "id": "4", "verdict": "PROVEN", "findings": [], "payableCents": 57600 },
+    { "id": "5", "verdict": "RATE_ABOVE_CONTRACT", "findings": ["RATE_ABOVE_CONTRACT", "MATH_ERROR"], "payableCents": 27750 }
+  ]
+}

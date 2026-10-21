@@ -1,0 +1,12 @@
+WEEKLY TIMESHEET
+Sheet: TS-BM-38
+Site: Logistics Hall 7, Hamburg
+Crew: Birchline Montage s.c.
+Week: 38/2026
+Site manager: Katrin Vogelsang
+
+Date       | Worker           | Trade              | Hours | Site manager sign-off
+2026-09-14 | Brzezina, Tomasz | Formwork carpenter | 8.00  | signed K. Vogelsang
+2026-09-14 | Sośnicki, Kamil  | Labourer           | 8.00  | signed K. Vogelsang
+2026-09-15 | Brzezina, Tomasz | Formwork carpenter | 7.75  | signed K. Vogelsang
+2026-09-15 | Sośnicki, Kamil  | Labourer           | 8.50  | signed K. Vogelsang

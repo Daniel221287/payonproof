@@ -1,0 +1,12 @@
+STUNDENZETTEL
+Blatt: SZ-JK-38
+Baustelle: Logistikhalle 7, Hamburg
+Kolonne: Ekipa Dachowa Jaskółka s.c.
+KW: 38/2026
+Bauleitung: Katrin Vogelsang
+
+Datum      | Mitarbeiter       | Tätigkeit  | Stunden | Unterschrift Bauleitung
+16.09.2026 | Grzybowiec, Paweł | Dachdecker | 9,00    | unterschrieben K. Vogelsang
+16.09.2026 | Bondar, Mykola    | Helfer     | 9,00    | unterschrieben K. Vogelsang
+17.09.2026 | Grzybowiec, Paweł | Dachdecker | 8,00    | unterschrieben K. Vogelsang
+17.09.2026 | Bondar, Mykola    | Helfer     | 8,00    | nicht unterschrieben

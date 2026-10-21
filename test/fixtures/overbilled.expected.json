@@ -1,0 +1,15 @@
+{
+  "sample": "overbilled",
+  "totals": { "claimedCents": 633800, "payableCents": 503500, "disputedCents": 130300 },
+  "caseFindings": [],
+  "lines": [
+    { "id": "1", "verdict": "PROVEN", "findings": [], "payableCents": 36900 },
+    { "id": "2", "verdict": "PROVEN", "findings": [], "payableCents": 36900 },
+    { "id": "3", "verdict": "PROVEN", "findings": [], "payableCents": 36900 },
+    { "id": "4", "verdict": "DUPLICATE", "findings": ["DUPLICATE"], "payableCents": 0 },
+    { "id": "5", "verdict": "UNSIGNED", "findings": ["UNSIGNED"], "payableCents": 0 },
+    { "id": "6", "verdict": "PARTIAL", "findings": ["PARTIAL"], "payableCents": 37600 },
+    { "id": "7", "verdict": "PARTIAL", "findings": ["PARTIAL"], "payableCents": 230400 },
+    { "id": "8", "verdict": "PROVEN", "findings": [], "payableCents": 124800 }
+  ]
+}

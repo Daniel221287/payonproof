@@ -1,0 +1,11 @@
+{
+  "id": "rate-drift",
+  "title": "Rate drift",
+  "summary": "Hours are real, but billed at €39.00/h against a €37.00/h contract, with two arithmetic errors and a changed PayPal address.",
+  "documents": [
+    { "id": "contract", "type": "contract", "name": "Rate sheet SC-2026-040", "file": "contract.txt" },
+    { "id": "invoice", "type": "invoice", "name": "Invoice SF-2026-031", "file": "invoice.txt" },
+    { "id": "timesheet", "type": "timesheet", "name": "Timesheet TS-SF-38", "file": "timesheet.txt" },
+    { "id": "delivery", "type": "delivery_notes", "name": "Delivery note DN-5521", "file": "delivery-notes.txt" }
+  ]
+}

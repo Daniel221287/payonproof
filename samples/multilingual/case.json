@@ -1,0 +1,11 @@
+{
+  "id": "multilingual",
+  "title": "Polish invoice, German site papers",
+  "summary": "A Polish faktura checked against German Stundenzettel and Lieferscheine: one unsigned day and a payment cap.",
+  "documents": [
+    { "id": "contract", "type": "contract", "name": "Preisblatt NU-2026-077 (DE)", "file": "contract.txt" },
+    { "id": "invoice", "type": "invoice", "name": "Faktura 14/09/2026 (PL)", "file": "invoice.txt" },
+    { "id": "timesheet", "type": "timesheet", "name": "Stundenzettel SZ-JK-38 (DE)", "file": "timesheet.txt" },
+    { "id": "delivery", "type": "delivery_notes", "name": "Lieferscheine LS-7710, LS-7711 (DE)", "file": "delivery-notes.txt" }
+  ]
+}

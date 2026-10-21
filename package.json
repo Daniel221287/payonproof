@@ -1,0 +1,30 @@
+{
+  "name": "payonproof",
+  "version": "1.0.0",
+  "description": "An AI accounts-payable agent that pays subcontractors only for work it can prove, through PayPal Payouts (sandbox).",
+  "type": "module",
+  "license": "MIT",
+  "author": "Daniel221287",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "demo": "node server.mjs --mock-paypal",
+    "test": "node --test",
+    "e2e": "node scripts/e2e-screenshots.mjs",
+    "vendor": "node scripts/copy-vendor.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@fontsource-variable/atkinson-hyperlegible-mono": "5.3.0",
+    "@fontsource-variable/atkinson-hyperlegible-next": "5.3.0",
+    "ag-grid-community": "36.2.0",
+    "playwright-core": "1.56.1"
+  }
+}
