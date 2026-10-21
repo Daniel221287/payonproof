@@ -28,9 +28,9 @@ npm run demo          # offline sample parser + MOCK PayPal, no keys needed
 2. The grid shows each line: a duplicate, a day without the site manager's signature, two foreman hours too many, 22 m³ of concrete invoiced where 18 m³ arrived. **€6,338.00 claimed, €5,035.00 payable.**
 3. Click line 7 to see its proof chain (delivery notes LS-4471 and LS-4472, 9 m³ each).
 4. Read the message to the subcontractor. Try **Polish invoice, German site papers** for a message in Polish, or **Rate drift** for Ukrainian.
-5. Tick the confirmation and click **Approve exactly this payment**. The preview hash and a single-use, 10-minute approval appear.
+5. Tick the confirmation and click **Approve exactly this payment**. The preview hash and a single-use, 10-minute approval appear. Change the message and save it now, and the approval is withdrawn because the preview hash changed; approve again.
 6. Click **Pay with PayPal (sandbox)**. The receipt shows the PayPal batch id, item and transaction ids, statuses and **PAID & VERIFIED**, read back from PayPal.
-7. Click Pay again: refused. Edit the message: the approval is withdrawn because the preview hash changed.
+7. The Pay button now stays disabled and the message is locked; a second pay request to the API is refused with `409 ALREADY_PAID`. Verify **Overbilled invoice** again: the new case is blocked with `INVOICE_ALREADY_PAID`, because the paid-invoice ledger remembers the invoice (restarting `npm run demo` clears it, as MOCK PayPal forgets its payouts too).
 
 With real sandbox credentials (see [PayPal sandbox setup](#paypal-sandbox-setup)) the same flow pays a sandbox account through `api-m.sandbox.paypal.com`.
 

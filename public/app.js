@@ -611,6 +611,16 @@
     const note = $('#message-note');
     note.hidden = !message.note;
     note.textContent = message.note ?? '';
+    // After the payment went to PayPal the message is part of what was paid: it can be copied, not changed.
+    const locked = Boolean(c.payout && !['NOT_SENT', 'REJECTED'].includes(c.payout.state));
+    const textBox = $('#message-text');
+    if (locked && state.messageDirty) {
+      textBox.value = message.text;
+      state.messageDirty = false;
+    }
+    textBox.readOnly = locked;
+    $('#message-locked').hidden = !locked;
+    $('#save-message').hidden = locked;
     $('#save-message').disabled = !state.messageDirty;
 
     const sentence = $('#approval-sentence');
@@ -640,13 +650,13 @@
     const c = state.caseView;
     const a = state.approval;
     box.removeAttribute('data-state');
+    if (c.payout && !['NOT_SENT', 'REJECTED'].includes(c.payout.state)) {
+      box.replaceChildren(h('p', {}, h('strong', { text: 'Approved and used.' }), ` The payout went to PayPal as sender_batch_id ${c.payout.senderBatchId.slice(0, 16)}…, derived from this preview hash.`));
+      return;
+    }
     if (state.messageDirty) {
       box.setAttribute('data-state', 'withdrawn');
       box.replaceChildren(h('span', { text: 'You changed the message. Save it to get the new preview hash, then approve.' }));
-      return;
-    }
-    if (c.payout && !['NOT_SENT', 'REJECTED'].includes(c.payout.state)) {
-      box.replaceChildren(h('p', {}, h('strong', { text: 'Approved and used.' }), ` The payout went to PayPal as sender_batch_id ${c.payout.senderBatchId.slice(0, 16)}…, derived from this preview hash.`));
       return;
     }
     if (!a) {

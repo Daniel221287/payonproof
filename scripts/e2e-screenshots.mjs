@@ -97,6 +97,9 @@ for (const run of runs) {
     await page.locator('.stamp').getByText('Paid & verified').waitFor({ timeout: 15_000 });
     assert.match(await page.locator('#receipt').textContent(), /SUCCESS/);
     assert.match(await page.locator('#paypal-badge').textContent(), /MOCK PayPal/);
+    assert.ok(await page.locator('#pay-btn').isDisabled(), 'Pay stays disabled after the payment');
+    assert.ok(await page.locator('#message-text').evaluate((box) => box.readOnly), 'the paid message is locked');
+    assert.ok(await page.locator('#save-message').isHidden(), 'there is nothing to save after the payment');
 
     await page.evaluate(() => document.querySelector('#toast')?.removeAttribute('data-show'));
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

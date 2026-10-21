@@ -428,6 +428,7 @@ button[aria-busy="true"]::after {
 .meta-line { color: var(--ink-2); font-size: 0.88rem; }
 .note { padding: 8px 10px; border-left: 3px solid var(--rule-strong); background: var(--sheet-2); color: var(--ink-2); font-size: 0.88rem; }
 .message-panel textarea { min-height: 300px; padding: 12px 14px; resize: vertical; font-size: 0.94rem; line-height: 1.55; }
+.message-panel textarea[readonly] { background: var(--sheet-2); border-style: dashed; }
 .button-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .approval-panel {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; padding: 18px;

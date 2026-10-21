@@ -180,7 +180,8 @@
           <p class="meta-line" id="message-meta"></p>
           <p class="note" id="message-note" hidden></p>
           <label class="visually-hidden" for="message-text">Message text</label>
-          <textarea id="message-text" rows="16" aria-describedby="message-meta"></textarea>
+          <textarea id="message-text" rows="16" aria-describedby="message-meta message-locked"></textarea>
+          <p class="note" id="message-locked" hidden>The message is locked: it was approved and sent with this payment.</p>
           <div class="button-row">
             <button type="button" class="button-quiet" id="save-message" disabled>Save message</button>
             <button type="button" class="button-quiet" id="copy-message">Copy message</button>
