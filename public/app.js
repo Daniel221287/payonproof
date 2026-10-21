@@ -399,7 +399,7 @@
 
     const unreadable = c.unreadable ?? [];
     $('#cannot-verify').hidden = unreadable.length === 0;
-    $('#cannot-verify-list').replaceChildren(...unreadable.map((doc) => h('li', {}, h('strong', { text: doc.name }), ` could not be read (${doc.reason}).`)));
+    $('#cannot-verify-list').replaceChildren(...unreadable.map((doc) => h('li', {}, h('strong', { text: doc.name }), ` could not be read: ${doc.reason}.`)));
 
     const findings = $('#case-findings');
     const shown = (v?.caseFindings ?? c.blockers ?? []).filter((finding) => !(unreadable.length && finding.code === 'DOCUMENT_REJECTED'));
