@@ -524,6 +524,9 @@
         const node = event.api.getDisplayedRowAtIndex(event.rowIndex);
         if (node && !node.isSelected()) node.setSelected(true, true);
       },
+      // The grid is one Tab stop: arrow keys move between cells, Tab and Shift+Tab leave the grid.
+      tabToNextCell: () => false,
+      tabToNextHeader: () => false,
       overlayNoRowsTemplate: '<span>No invoice lines.</span>',
     };
     state.grid = window.agGrid.createGrid($('#lines-grid'), gridOptions);
@@ -787,6 +790,7 @@
       return;
     }
     box.hidden = false;
+    const hadFocus = document.activeElement?.id === 'receipt-title';
     const stamp = STAMPS[payout.state] ?? STAMPS.SENT;
     const receipt = payout.receipt;
     const environment = payout.environment === 'mock' ? 'MOCK PayPal' : `PayPal ${payout.environment}`;
@@ -826,11 +830,13 @@
       fields,
       actions,
     ].filter(Boolean));
+    if (hadFocus) $('#receipt-title').focus({ preventScroll: true });
   }
 
   async function pay() {
     const c = state.caseView;
     const button = $('#pay-btn');
+    let focusReceipt = false;
     showError('#pay-error', null);
     if (!approvalIsLive()) {
       showError('#pay-error', new Error('Approve the payment first.'));
@@ -843,7 +849,7 @@
       state.approval = { ...state.approval, used: true };
       state.busy = null;
       setCase(caseView);
-      $('#receipt-title')?.focus({ preventScroll: true });
+      focusReceipt = true;
       $('#receipt').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
       toast(caseView.payout?.state === 'PAID_VERIFIED' ? 'Paid and verified by PayPal readback.' : 'Sent to PayPal. See the receipt.');
     } catch (error) {
@@ -856,6 +862,8 @@
       renderPay();
       renderApprove();
       renderProgress();
+      // Focus the receipt heading only now: the renders above replace the receipt's elements.
+      if (focusReceipt) $('#receipt-title')?.focus({ preventScroll: true });
     }
   }
 
@@ -967,6 +975,10 @@
       });
     }
     $('#analyze-btn').addEventListener('click', analyze);
+    $('#skip-table').addEventListener('click', (event) => {
+      event.preventDefault();
+      $('#inspector').focus();
+    });
     $('#message-text').addEventListener('input', () => {
       const dirty = $('#message-text').value !== (state.caseView?.message?.text ?? '');
       if (dirty !== state.messageDirty) {

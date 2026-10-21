@@ -48,6 +48,23 @@ async function pasteFlow(page) {
   assert.ok(await page.locator('#ledger').isHidden(), 'no payable figure is shown from missing evidence');
 }
 
+/** Keyboard: the grid is a single Tab stop with a skip link before it; arrow keys move inside it. */
+async function keyboardFlow(page) {
+  const focused = () => page.evaluate(() => (document.activeElement?.closest('#lines-grid') ? 'grid' : document.activeElement?.id));
+  await page.locator('#proof-title').focus();
+  await page.keyboard.press('Tab');
+  assert.equal(await focused(), 'skip-table');
+  await page.keyboard.press('Tab');
+  assert.equal(await focused(), 'grid');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Tab');
+  assert.equal(await focused(), 'message-text', 'Tab leaves the grid');
+  await page.locator('#proof-title').focus();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Enter');
+  assert.equal(await focused(), 'inspector', 'the skip link moves focus past the table');
+}
+
 /** The paid-invoice ledger: the invoice just paid cannot be paid again through a new case. */
 async function paidTwiceFlow(page) {
   await page.goto(base, { waitUntil: 'networkidle' });
@@ -88,6 +105,7 @@ for (const run of runs) {
     for (const expected of ['Duplicate', 'Unsigned', 'Partial', 'Proven']) assert.ok(verdicts.includes(expected), `verdict ${expected} shown`);
     assert.match(await page.locator('#title-block').textContent(), /Offline sample parser — no AI used/);
     await page.locator('#proof').screenshot({ path: path.join(outDir, `${run.name}-proof.png`) });
+    if (!run.mobile) await keyboardFlow(page);
 
     await page.locator('#confirm-check').check();
     await page.locator('#approve-btn').click();
@@ -95,6 +113,7 @@ for (const run of runs) {
     await page.locator('#pay-btn:not([disabled])').waitFor();
     await page.locator('#pay-btn').click();
     await page.locator('.stamp').getByText('Paid & verified').waitFor({ timeout: 15_000 });
+    await page.waitForFunction(() => document.activeElement?.id === 'receipt-title');
     assert.match(await page.locator('#receipt').textContent(), /SUCCESS/);
     assert.match(await page.locator('#paypal-badge').textContent(), /MOCK PayPal/);
     assert.ok(await page.locator('#pay-btn').isDisabled(), 'Pay stays disabled after the payment');

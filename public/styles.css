@@ -389,6 +389,9 @@ button[aria-busy="true"]::after {
 .grid-wrap { min-width: 0; }
 .grid-hint { margin-bottom: 8px; color: var(--ink-2); font-size: 0.86rem; }
 .lines-grid { width: 100%; }
+.skip-table { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip-table:focus { position: static; width: auto; height: auto; clip: auto; display: inline-block; margin-bottom: 8px; padding: 6px 10px; border-radius: 3px; background: var(--ink); color: var(--sheet); font-weight: 650; }
+.inspector:focus { outline: 3px solid var(--focus); outline-offset: 2px; }
 .cell-subject { display: grid; padding: 7px 0; line-height: 1.3; min-width: 0; }
 .cell-subject strong { font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
 .cell-subject span { color: var(--ink-2); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; }

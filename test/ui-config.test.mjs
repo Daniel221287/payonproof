@@ -99,3 +99,12 @@ test('the Render blueprint asks for the approver passcode, MOCK PayPal and the M
   assert.throws(() => resolveConfig({ RENDER: 'true', PORT: '10000', RENDER_EXTERNAL_HOSTNAME: 'payonproof.onrender.com' }), /APPROVER_PASSCODE is missing/);
   assert.equal(resolveConfig({ RENDER: 'true', PORT: '10000', PAYPAL_MOCK: '1', APPROVER_PASSCODE: 'long-enough' }).paypal.mode, 'mock');
 });
+
+test('keyboard: the grid is one Tab stop with a skip link before it, and Pay moves focus to the receipt', () => {
+  const app = read('public/app.js');
+  assert.match(app, /tabToNextCell: \(\) => false/);
+  assert.match(app, /tabToNextHeader: \(\) => false/);
+  assert.match(html, /<a class="skip-table" id="skip-table" href="#inspector">Skip the table<\/a>/);
+  assert.match(html, /id="inspector" aria-live="polite" tabindex="-1"/);
+  assert.match(app, /if \(focusReceipt\) \$\('#receipt-title'\)\?\.focus/);
+});
