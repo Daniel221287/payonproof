@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { resolveConfig } from '../src/config.mjs';
 import { loadDotEnv, parseDotEnv } from '../src/env.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -65,6 +66,14 @@ test('.env parsing: comments, export, quotes; existing variables win; values nev
   const result = loadDotEnv(`${root}.env.example`, target);
   assert.equal(result.found, true);
   assert.ok(result.loaded.every((name) => /^[A-Z0-9_]+$/.test(name)), 'only names are reported');
+});
+
+test('a .env copied from .env.example picks the AI provider from the key that is added to it', () => {
+  const example = parseDotEnv(read('.env.example'));
+  assert.equal(example.AI_PROVIDER, '', 'AI_PROVIDER is left empty (automatic)');
+  assert.equal(resolveConfig(example).ai.provider, 'offline');
+  assert.equal(resolveConfig({ ...example, GEMINI_API_KEY: 'dummy' }).ai.provider, 'gemini');
+  assert.equal(resolveConfig({ ...example, NEBIUS_API_KEY: 'dummy' }).ai.provider, 'nebius');
 });
 
 test('.env.example documents every environment variable the code reads', () => {

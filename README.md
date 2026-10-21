@@ -213,7 +213,7 @@ npm start            # 127.0.0.1:4410; offline AI; PayPal as configured in .env
 npm run demo         # same, but with MOCK PayPal (no network at all)
 ```
 
-Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and optionally `NEBIUS_MODEL`) to `.env`, Gemini with `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`), or a local model with `AI_PROVIDER=openai`, `AI_BASE_URL=http://127.0.0.1:11434/v1`, `AI_MODEL=<model>`. With an AI provider you can paste any plain-text documents on the **Your documents** tab; offline mode reads only the sample layout (start from a sample and change numbers to watch the verdicts move). Every variable is documented in [`.env.example`](.env.example).
+Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and optionally `NEBIUS_MODEL`) to `.env`, Gemini with `GEMINI_API_KEY` (and optionally `GEMINI_MODEL`), or a local model with `AI_PROVIDER=openai`, `AI_BASE_URL=http://127.0.0.1:11434/v1`, `AI_MODEL=<model>`. Leave `AI_PROVIDER` empty to let the key choose the provider; a value there wins over every key. With an AI provider you can paste any plain-text documents on the **Your documents** tab; offline mode reads only the sample layout (start from a sample and change numbers to watch the verdicts move). Every variable is documented in [`.env.example`](.env.example).
 
 ## Deploy on Render
 
