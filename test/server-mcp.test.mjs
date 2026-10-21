@@ -109,6 +109,10 @@ test('Host allow-list, JSON-only bodies, size limit and path traversal are enfor
   assert.equal((await post('/api/analyze', '{not json')).status, 400);
   const big = await post('/api/analyze', { documents: [{ type: 'invoice', text: 'x'.repeat(800 * 1024) }] });
   assert.equal(big.status, 413);
+  // The body is read to its end before the answer, so the client gets the 413, not a reset connection.
+  const bigger = await post('/api/analyze', { documents: [{ type: 'invoice', text: 'x'.repeat(2 * 1024 * 1024) }] });
+  assert.equal(bigger.status, 413);
+  assert.equal((await bigger.json()).error.code, 'BODY_TOO_LARGE');
   for (const path of ['/.env', '/%2e%2e/package.json', '/../server.mjs', '/vendor/../../package.json', '/src/service.mjs']) {
     assert.equal((await raw(path)).status, 404, path);
   }

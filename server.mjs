@@ -123,16 +123,26 @@ function sameSecret(given, expected) {
   return timingSafeEqual(digest(given), digest(expected));
 }
 
+// An oversized body up to this size is read to its end and discarded before the 413 is sent, so the
+// client finishes sending and reads the answer (closing mid-upload shows up as a reset connection,
+// on Windows in particular). Anything larger is cut off.
+const DRAIN_LIMIT_BYTES = 4 * MAX_BODY_BYTES;
+
 async function readJsonBody(req) {
   const declared = Number(req.headers['content-length'] ?? 0);
-  if (declared > MAX_BODY_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE', `Requests are limited to ${MAX_BODY_BYTES / 1024} KB.`, { connection: 'close' });
+  const tooLarge = () => new HttpError(413, 'BODY_TOO_LARGE', `Requests are limited to ${MAX_BODY_BYTES / 1024} KB.`, { connection: 'close' });
+  if (declared > DRAIN_LIMIT_BYTES) throw tooLarge();
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) throw new HttpError(413, 'BODY_TOO_LARGE', `Requests are limited to ${MAX_BODY_BYTES / 1024} KB.`, { connection: 'close' });
-    chunks.push(chunk);
+    if (size > DRAIN_LIMIT_BYTES) {
+      req.destroy();
+      throw tooLarge();
+    }
+    if (size <= MAX_BODY_BYTES) chunks.push(chunk);
   }
+  if (size > MAX_BODY_BYTES || declared > MAX_BODY_BYTES) throw tooLarge();
   const text = Buffer.concat(chunks).toString('utf8');
   if (!text.trim()) return {};
   try {
