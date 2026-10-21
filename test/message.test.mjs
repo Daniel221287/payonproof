@@ -78,13 +78,32 @@ test('an AI draft that drops or changes a fact is replaced by the template', asy
   const invented = templateMessage(facts).replace('€5,035.00', '€5,300.00');
   const draft = await draftMessage({ provider: fakeAi(invented), facts });
   assert.equal(draft.source, 'template');
-  assert.match(draft.note, /failed the fact check \(missing payable total €5,035\.00/);
+  assert.match(draft.note, /Two AI drafts failed the fact check \(the second left out payable total €5,035\.00/);
   const missingLine = factCheckMessage('We pay €5,035.00 of €6,338.00. Line 4: €0.00.', facts);
   assert.ok(missingLine.includes('line 5'));
   const failing = { ...fakeAi(''), async generateJson() { throw new AiError('AI_TIMEOUT', 'Gemini did not answer within 60 s.'); } };
   const fallback = await draftMessage({ provider: failing, facts });
   assert.equal(fallback.source, 'template');
   assert.match(fallback.note, /did not answer/);
+});
+
+test('a draft that misses a fact gets one second attempt that names what was missing, and is checked again', async () => {
+  const facts = await factsFor('overbilled');
+  const good = templateMessage(facts);
+  const invented = good.replace('€5,035.00', '€5,300.00');
+  const requests = [];
+  const answers = [invented, good];
+  const provider = { ...fakeAi(''), async generateJson(request) { requests.push(request); return { json: { message: answers.shift() } }; } };
+  const draft = await draftMessage({ provider, facts });
+  assert.equal(draft.source, 'ai');
+  assert.equal(draft.text, good);
+  assert.match(draft.note, /^The first AI draft left out payable total €5,035\.00; a second draft passed the fact check\.$/);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1].user, /A previous draft left out: payable total €5,035\.00\. Write the whole message again/);
+  assert.equal(requests[1].system, requests[0].system);
+  const once = [];
+  await draftMessage({ provider: { ...fakeAi(good), async generateJson(request) { once.push(request); return { json: { message: good } }; } }, facts });
+  assert.equal(once.length, 1, 'a draft that passes is not asked again');
 });
 
 test('a sign-off by the wrong person is named in the message, in all four languages', async () => {

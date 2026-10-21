@@ -306,14 +306,23 @@ export async function draftMessage({ provider, facts }) {
     'Do not add facts, promises, deadlines, threats or legal claims.',
     'Answer with JSON only: {"message": "<the message text>"}',
   ].join('\n');
-  try {
-    const output = await provider.generateJson({ system, user: JSON.stringify(facts), schema: MESSAGE_SCHEMA });
+  const ask = async (user) => {
+    const output = await provider.generateJson({ system, user, schema: MESSAGE_SCHEMA });
     const text = typeof output.json.message === 'string' ? output.json.message.trim() : '';
-    const missing = factCheckMessage(text, facts);
-    if (missing.length === 0) {
-      return { text, source: 'ai', label: `AI draft, fact-checked (${provider.label})`, note: null };
+    return { text, missing: factCheckMessage(text, facts) };
+  };
+  try {
+    const first = await ask(JSON.stringify(facts));
+    if (first.missing.length === 0) {
+      return { text: first.text, source: 'ai', label: `AI draft, fact-checked (${provider.label})`, note: null };
     }
-    return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed the fact check (missing ${missing.slice(0, 3).join(', ')}), so the template was used.` };
+    // One more draft, told exactly what the fact check missed. It is checked the same way.
+    const left = first.missing.slice(0, 6).join('; ');
+    const second = await ask(`${JSON.stringify(facts)}\n\nA previous draft left out: ${left}. Write the whole message again and include each of them exactly as written in the JSON.`);
+    if (second.missing.length === 0) {
+      return { text: second.text, source: 'ai', label: `AI draft, fact-checked (${provider.label})`, note: `The first AI draft left out ${first.missing.slice(0, 3).join(', ')}; a second draft passed the fact check.` };
+    }
+    return { text: template(), source: 'template', label: 'Template, no AI used', note: `Two AI drafts failed the fact check (the second left out ${second.missing.slice(0, 3).join(', ')}), so the template was used.` };
   } catch (error) {
     if (!(error instanceof AiError)) throw error;
     return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed (${error.message.replace(/\.+$/, '')}), so the template was used.` };
