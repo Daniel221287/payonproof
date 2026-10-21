@@ -262,7 +262,7 @@ Free instances sleep when idle; cases, approvals and receipts live in memory and
 ## Tests
 
 ```bash
-npm test             # node --test: 175 tests, no network
+npm test             # node --test: 176 tests, no network
 npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK PayPal; screenshots to e2e-screenshots/
 npm run live-check   # real model calls: every sample with your AI provider against the offline reference (needs a key)
 npm run e2e -- --update-docs   # the same, and it replaces the README screenshots in docs/img/

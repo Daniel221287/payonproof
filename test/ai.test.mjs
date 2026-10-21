@@ -230,6 +230,28 @@ test('output budget: reasoning on raises max_tokens, off leaves the endpoint def
     (error) => error.code === 'AI_INCOMPLETE');
 });
 
+test('a timeout while the answer body is still arriving is an AI timeout, retried once, never a crash', async () => {
+  const calls = [];
+  const fetch = async (url, init) => {
+    calls.push(init);
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"choices": ['));
+        init.signal.addEventListener('abort', () => controller.error(init.signal.reason));
+      },
+    });
+    return new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  const provider = createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: 'test-nebius-key-999999', AI_TIMEOUT_MS: '50' }), { fetch, sleep: noSleep });
+  const keepAlive = setInterval(() => {}, 20); // AbortSignal.timeout does not keep the process alive on its own
+  try {
+    await assert.rejects(provider.generateJson({ system: 'S', user: 'U' }), (error) => error instanceof AiError && error.code === 'AI_TIMEOUT');
+  } finally {
+    clearInterval(keepAlive);
+  }
+  assert.equal(calls.length, 2);
+});
+
 test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
   assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
   assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });

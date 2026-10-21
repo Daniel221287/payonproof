@@ -132,15 +132,21 @@ async function readBody(response) {
   }
 }
 
+function networkError(error, timeoutMs, label) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+    return new AiError('AI_TIMEOUT', `${label} did not answer within ${Math.round(timeoutMs / 1000)} s.`, { retryable: true });
+  }
+  const code = error?.cause?.code ?? error?.code ?? 'network error';
+  return new AiError('AI_NETWORK', `${label} could not be reached (${code}).`, { retryable: true });
+}
+
+/** POST and read the whole answer under one timeout; a timeout or a cut connection while the body is still arriving is an AiError too. */
 async function send(fetchImpl, url, init, timeoutMs, label) {
   try {
-    return await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    const response = await fetchImpl(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return { response, ...(await readBody(response)) };
   } catch (error) {
-    if (error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-      throw new AiError('AI_TIMEOUT', `${label} did not answer within ${Math.round(timeoutMs / 1000)} s.`, { retryable: true });
-    }
-    const code = error?.cause?.code ?? error?.code ?? 'network error';
-    throw new AiError('AI_NETWORK', `${label} could not be reached (${code}).`, { retryable: true });
+    throw networkError(error, timeoutMs, label);
   }
 }
 
@@ -183,12 +189,11 @@ async function callGemini(fetchImpl, config, { system, user }) {
     contents: [{ role: 'user', parts: [{ text: user }] }],
     generationConfig: { responseMimeType: 'application/json', temperature: 0 },
   };
-  const response = await send(fetchImpl, url, {
+  const { response, json } = await send(fetchImpl, url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': config.apiKey },
     body: JSON.stringify(body),
   }, config.timeoutMs, 'Gemini');
-  const { json } = await readBody(response);
   if (!response.ok) {
     const status = json?.error?.status ? ` ${json.error.status}` : '';
     const detail = json?.error?.message ? `: ${redact(json.error.message, config.apiKey).slice(0, 300)}` : '';
@@ -245,8 +250,7 @@ async function callOpenAi(fetchImpl, config, state, { system, user, schema }) {
     };
     const headers = { 'content-type': 'application/json' };
     if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
-    const response = await send(fetchImpl, url, { method: 'POST', headers, body: JSON.stringify(body) }, config.timeoutMs, 'The AI endpoint');
-    return { response, mode, ...(await readBody(response)) };
+    return { mode, ...(await send(fetchImpl, url, { method: 'POST', headers, body: JSON.stringify(body) }, config.timeoutMs, 'The AI endpoint')) };
   };
   let result = await attempt(answerMode(state, schema));
   // An endpoint that rejects an optional request feature gets the request again without it:
