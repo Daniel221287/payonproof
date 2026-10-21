@@ -211,6 +211,25 @@ test('structured output: a request with a schema sends it as strict json_schema;
   assert.deepEqual(gemini.calls[0].body.generationConfig, { responseMimeType: 'application/json', temperature: 0 }, 'Gemini keeps JSON mode');
 });
 
+test('output budget: reasoning on raises max_tokens, off leaves the endpoint default, AI_MAX_OUTPUT_TOKENS wins', async () => {
+  const NKEY = 'test-nebius-key-888888';
+  const ok = () => ({ body: { model: 'm', choices: [{ message: { content: '{"a":1}' }, finish_reason: 'stop' }] } });
+  const run = async (env) => {
+    const { fetch, calls } = scriptedFetch([ok()]);
+    await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY, ...env }), { fetch }).generateJson({ system: 'S', user: 'U' });
+    return calls[0].body.max_tokens;
+  };
+  assert.equal(await run({}), undefined);
+  assert.equal(await run({ NEBIUS_REASONING: 'on' }), 16384);
+  assert.equal(await run({ NEBIUS_REASONING: 'on', AI_MAX_OUTPUT_TOKENS: '8000' }), 8000);
+  assert.equal(await run({ AI_MAX_OUTPUT_TOKENS: '2048' }), 2048);
+  assert.throws(() => resolveAiConfig({ NEBIUS_API_KEY: NKEY, AI_MAX_OUTPUT_TOKENS: '12.5' }), /AI_MAX_OUTPUT_TOKENS/);
+  assert.throws(() => resolveAiConfig({ AI_PROVIDER: 'openai', AI_BASE_URL: 'http://127.0.0.1:11434/v1', AI_MODEL: 'x', AI_MAX_OUTPUT_TOKENS: '99' }), /256 to 131072/);
+  const cut = scriptedFetch([{ body: { model: 'm', choices: [{ message: { content: '{"lines": [' }, finish_reason: 'length' }] } }]);
+  await assert.rejects(createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_REASONING: 'on' }), { fetch: cut.fetch }).generateJson({ system: 'S', user: 'U' }),
+    (error) => error.code === 'AI_INCOMPLETE');
+});
+
 test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
   assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
   assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });

@@ -153,7 +153,7 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 - **Setup**: create a key at tokenfactory.nebius.com > **API keys** and set `NEBIUS_API_KEY` (in `.env` or the Render dashboard). With only `NEBIUS_API_KEY` set, the provider is chosen automatically; `NEBIUS_MODEL` picks another catalog model. The key is sent only as `Authorization: Bearer …` to `NEBIUS_BASE_URL` and is redacted from every error.
 - **What Nemotron decides**: nothing about money. It turns text into fields; the validator rejects anything malformed; amounts and verdicts come from the deterministic engine; a person approves; PayPal pays.
 - **Structured output**: each document type has a JSON Schema (`OUTPUT_SCHEMAS` in `src/extract.mjs`) that pins the keys, the types and the two line kinds. Every value may still be null, so a value that is not printed stays null and the validator rejects the document, instead of the model being pushed to invent a number. The page shows "JSON Schema enforced" next to "Read by". An endpoint that rejects `json_schema` gets JSON mode instead (remembered per server); `AI_JSON_SCHEMA=0` turns it off.
-- **Reasoning switch**: `NEBIUS_REASONING=off` (the default) sends `chat_template_kwargs: {enable_thinking: false}`, so Nemotron answers without its hidden reasoning pass. On one timesheet: 10.3 s and 846 output tokens with reasoning, 4.4 s and 270 tokens without, same JSON. `NEBIUS_REASONING=on` lets it reason. If an endpoint rejects the field, the call is repeated without it.
+- **Reasoning switch**: `NEBIUS_REASONING=off` (the default) sends `chat_template_kwargs: {enable_thinking: false}`, so Nemotron answers without its hidden reasoning pass. On one timesheet: 10.3 s and 846 output tokens with reasoning, 4.4 s and 270 tokens without, same JSON. `NEBIUS_REASONING=on` lets it reason; the reasoning counts toward the output (an invoice took about 3,000 tokens), so `max_tokens` is then 16384 unless `AI_MAX_OUTPUT_TOKENS` says otherwise. If an endpoint rejects the field, the call is repeated without it.
 - **Reasoning output**: if the model writes its reasoning before the answer (`…</think>`), only the answer after it is parsed; an answer cut off while still reasoning is reported as incomplete and blocks payment.
 - **Cost guard**: `AI_MAX_CALLS_PER_HOUR` and `AI_MAX_CALLS_PER_DAY` cap model calls for the whole server, and identical documents are served from a cache, so the public demo stays inside its credits.
 
@@ -165,7 +165,7 @@ Live runs on 21 October 2026 against Token Factory, `nvidia/NVIDIA-Nemotron-3-Na
 | --- | --- | --- | --- | --- |
 | Reasoning on, JSON mode (prompt `extract-v1`) | 16/16 | 4/4 | 4/4 | 42–88 s |
 | Reasoning off, JSON mode (`extract-v2`) | 14/16; 2 cases fell back to the offline parser | 4/4, 2 of them only through the fallback | 2/4 | 9–18 s |
-| Reasoning off, JSON Schema (`extract-v3`, the default) | 16/16 | 4/4 | 4/4, 1 on the second attempt | 3.6–7.3 s |
+| Reasoning off, JSON Schema (`extract-v3`, the default), `npm run live-check -- --runs 3` | 48/48 | 12/12 | 11/12, 2 of them on the second attempt; 1 template | 3.4–6.4 s |
 | Reasoning on, JSON Schema (`extract-v3`, `NEBIUS_REASONING=on`) | 16/16 | 4/4 | 4/4 | 11–26 s |
 
 ### Failure cases we hit, and what changed
@@ -262,7 +262,7 @@ Free instances sleep when idle; cases, approvals and receipts live in memory and
 ## Tests
 
 ```bash
-npm test             # node --test: 174 tests, no network
+npm test             # node --test: 175 tests, no network
 npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK PayPal; screenshots to e2e-screenshots/
 npm run live-check   # real model calls: every sample with your AI provider against the offline reference (needs a key)
 npm run e2e -- --update-docs   # the same, and it replaces the README screenshots in docs/img/

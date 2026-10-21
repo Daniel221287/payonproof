@@ -46,6 +46,18 @@ export class AiConfigError extends Error {
  * otherwise offline.
  * @param {Record<string, string|undefined>} env
  */
+// Output budget with Nemotron's reasoning on: the reasoning counts toward the output, and one live run
+// cut an invoice off at the endpoint's default limit.
+export const REASONING_MAX_OUTPUT_TOKENS = 16384;
+
+function readMaxOutputTokens(env) {
+  const raw = (env.AI_MAX_OUTPUT_TOKENS ?? '').trim();
+  if (raw === '') return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 256 || value > 131072) throw new AiConfigError('AI_MAX_OUTPUT_TOKENS must be a whole number from 256 to 131072.');
+  return value;
+}
+
 export function resolveAiConfig(env) {
   const explicit = (env.AI_PROVIDER ?? '').trim().toLowerCase();
   const provider = explicit || (env.NEBIUS_API_KEY ? 'nebius' : env.GEMINI_API_KEY ? 'gemini' : env.AI_BASE_URL ? 'openai' : 'offline');
@@ -72,6 +84,7 @@ export function resolveAiConfig(env) {
       jsonMode: env.AI_JSON_MODE !== '0',
       jsonSchema: env.AI_JSON_SCHEMA !== '0',
       reasoning,
+      maxOutputTokens: readMaxOutputTokens(env) ?? (reasoning === 'on' ? REASONING_MAX_OUTPUT_TOKENS : null),
       timeoutMs,
     };
   }
@@ -98,6 +111,7 @@ export function resolveAiConfig(env) {
       apiKey: env.AI_API_KEY || '',
       jsonMode: env.AI_JSON_MODE !== '0',
       jsonSchema: env.AI_JSON_SCHEMA !== '0',
+      maxOutputTokens: readMaxOutputTokens(env),
       timeoutMs,
     };
   }
@@ -225,6 +239,7 @@ async function callOpenAi(fetchImpl, config, state, { system, user, schema }) {
       temperature: 0,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       ...(format ? { response_format: format } : {}),
+      ...(config.maxOutputTokens ? { max_tokens: config.maxOutputTokens } : {}),
       // Nemotron on Token Factory: answer without the hidden reasoning pass (about 2x faster, 3x fewer tokens).
       ...(sendsTemplateKwargs() ? { chat_template_kwargs: { enable_thinking: false } } : {}),
     };
