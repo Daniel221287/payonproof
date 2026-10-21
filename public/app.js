@@ -402,7 +402,9 @@
     $('#cannot-verify-list').replaceChildren(...unreadable.map((doc) => h('li', {}, h('strong', { text: doc.name }), ` could not be read: ${doc.reason}.`)));
 
     const findings = $('#case-findings');
-    const shown = (v?.caseFindings ?? c.blockers ?? []).filter((finding) => !(unreadable.length && finding.code === 'DOCUMENT_REJECTED'));
+    // Blockers that arise after the analysis (another case paid this invoice) are only in c.blockers.
+    const all = v ? [...v.caseFindings, ...c.blockers.filter((blocker) => !v.caseFindings.some((finding) => finding.reason === blocker.reason))] : (c.blockers ?? []);
+    const shown = all.filter((finding) => !(unreadable.length && finding.code === 'DOCUMENT_REJECTED'));
     findings.replaceChildren(...shown.map((finding) => h('li', { 'data-severity': finding.severity },
       h('span', { class: 'finding-label', text: finding.severity === 'blocker' ? 'Blocked' : 'Warning' }),
       h('span', { text: finding.reason }))));
@@ -741,7 +743,7 @@
       } else {
         showError('#approve-error', error);
       }
-      if (error.code === 'PREVIEW_CHANGED') refreshCase();
+      if (error.code === 'PREVIEW_CHANGED' || error.code === 'INVOICE_ALREADY_PAID') refreshCase();
     } finally {
       setBusy(button, false);
       renderApprove();
@@ -771,13 +773,14 @@
     const sent = c.payout && !['NOT_SENT', 'REJECTED'].includes(c.payout.state);
     const configured = state.config.paypal.mode !== 'unconfigured';
     const live = approvalIsLive();
-    button.disabled = !live || sent || !configured || state.busy === 'pay' || state.messageDirty;
+    const blocked = c.proposal.status === 'BLOCKED';
+    button.disabled = !live || sent || blocked || !configured || state.busy === 'pay' || state.messageDirty;
     let hint;
     if (!configured) hint = 'PayPal is not configured on this server (set sandbox credentials or PAYPAL_MOCK=1).';
     else if (state.messageDirty && !sent) hint = 'Save or undo your change to the message first.';
     else if (sent) hint = 'This approved payment was sent. The receipt below is what PayPal reports.';
+    else if (blocked) hint = 'This payment is blocked. See the reasons above.';
     else if (live) hint = `Ready: ${money(c.proposal.core.payableCents, c.proposal.core.currency)} to ${c.proposal.core.payee.email}.`;
-    else if (c.proposal.status === 'BLOCKED') hint = 'This payment is blocked. See the reasons above.';
     else hint = 'Approve the payment first. The button unlocks for exactly the approved preview.';
     if (state.config.paypal.mode === 'mock' && !sent) hint += ' MOCK PayPal answers: an in-process fake of the sandbox API, no network.';
     $('#pay-hint').textContent = hint;
@@ -860,6 +863,8 @@
       state.busy = null;
       if (error.code === 'HUMAN_APPROVAL_REQUIRED') state.approval = null;
       if (error.data?.error?.case) setCase(error.data.error.case);
+      // Another case paid this invoice meanwhile: reload so the blocker and the disabled buttons show.
+      if (error.code === 'INVOICE_ALREADY_PAID') refreshCase();
       showError('#pay-error', error);
     } finally {
       setBusy(button, false);

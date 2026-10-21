@@ -70,6 +70,31 @@ async function keyboardFlow(page) {
   assert.equal(await focused(), 'inspector', 'the skip link moves focus past the table');
 }
 
+/** Two tabs approve two cases for the same invoice: the second Pay is refused and the page shows why. */
+async function twoTabsFlow(context) {
+  const open = async () => {
+    const page = await context.newPage();
+    await page.goto(base, { waitUntil: 'networkidle' });
+    await page.locator('label[for="sample-honest"]').click();
+    await page.locator('#analyze-btn').click();
+    await page.locator('#lines-grid .ag-row').first().waitFor();
+    await page.locator('#confirm-check').check();
+    await page.locator('#approve-btn').click();
+    await page.locator('#pay-btn:not([disabled])').waitFor();
+    return page;
+  };
+  const first = await open();
+  const second = await open();
+  await first.locator('#pay-btn').click();
+  await first.locator('.stamp').getByText('Paid & verified').waitFor({ timeout: 15_000 });
+  await second.locator('#pay-btn').click();
+  await second.locator('#case-findings li[data-severity="blocker"]').getByText('was already sent to PayPal').waitFor();
+  assert.match(await second.locator('#pay-error').textContent(), /^Invoice BM-2026-118 .* Nothing was sent\.$/);
+  assert.ok(await second.locator('#pay-btn').isDisabled(), 'the second Pay button is disabled');
+  await first.close();
+  await second.close();
+}
+
 /** Server unreachable on load: the message stays, Verify is disabled, the picker says why it is empty. */
 async function unreachableFlow(context) {
   const page = await context.newPage();
@@ -146,6 +171,7 @@ for (const run of runs) {
     if (run.name === 'desktop-light') {
       await paidTwiceFlow(page);
       await pasteFlow(page);
+      await twoTabsFlow(context);
       await unreachableFlow(context);
     }
     assert.deepEqual(problems, [], 'no console errors or CSP violations');
