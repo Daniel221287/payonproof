@@ -25,7 +25,13 @@ const PHRASES = {
       ? `the timesheet for this day is signed by ${signedBy}, not by the site manager`
       : 'the timesheet for this day is not signed by the site manager'),
     PARTIAL: ({ proven, claimed, unit }) => `only ${proven} of ${claimed} ${unit} are proven`,
-    RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `the rate ${invoiced} is above the contract rate ${contract}, so the contract rate is paid`,
+    ROLE_NO_RATE: ({ evidencedRole }) => `the signed timesheet shows the trade ${evidencedRole}, which has no agreed rate in the contract`,
+    ROLE_MISMATCH: ({ invoicedRole, evidencedRole, evidencedRate, rateApplied }) => (rateApplied
+      ? `invoiced as ${invoicedRole}, but the signed timesheet shows ${evidencedRole}, so the ${evidencedRole} rate of ${evidencedRate} is paid`
+      : `invoiced as ${invoicedRole}, but the signed timesheet shows ${evidencedRole}`),
+    RATE_ABOVE_CONTRACT: ({ invoiced, contract, paidAtContract }) => (paidAtContract
+      ? `the rate ${invoiced} is above the contract rate ${contract}, so the contract rate is paid`
+      : `the rate ${invoiced} is above the contract rate ${contract}`),
     MATH_ERROR: ({ written, correct }) => `the line total ${written} should be ${correct}`,
     OVER_CAP: ({ cap }) => `it exceeds the contract payment cap of ${cap} per invoice`,
   },
@@ -40,7 +46,13 @@ const PHRASES = {
       ? `der Stundenzettel für diesen Tag ist von ${signedBy} unterschrieben, nicht von der Bauleitung`
       : 'der Stundenzettel für diesen Tag ist nicht von der Bauleitung unterschrieben'),
     PARTIAL: ({ proven, claimed, unit }) => `nur ${proven} von ${claimed} ${unit} sind nachgewiesen`,
-    RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `der Satz ${invoiced} liegt über dem Vertragssatz ${contract}, vergütet wird der Vertragssatz`,
+    ROLE_NO_RATE: ({ evidencedRole }) => `laut unterschriebenem Stundenzettel als ${evidencedRole} tätig; dafür gibt es im Vertrag keinen vereinbarten Satz`,
+    ROLE_MISMATCH: ({ invoicedRole, evidencedRole, evidencedRate, rateApplied }) => (rateApplied
+      ? `berechnet als ${invoicedRole}, laut unterschriebenem Stundenzettel aber ${evidencedRole}, daher wird der Satz für ${evidencedRole} von ${evidencedRate} vergütet`
+      : `berechnet als ${invoicedRole}, laut unterschriebenem Stundenzettel aber ${evidencedRole}`),
+    RATE_ABOVE_CONTRACT: ({ invoiced, contract, paidAtContract }) => (paidAtContract
+      ? `der Satz ${invoiced} liegt über dem Vertragssatz ${contract}, vergütet wird der Vertragssatz`
+      : `der Satz ${invoiced} liegt über dem Vertragssatz ${contract}`),
     MATH_ERROR: ({ written, correct }) => `der Positionsbetrag ${written} müsste ${correct} lauten`,
     OVER_CAP: ({ cap }) => `die vertragliche Zahlungsobergrenze von ${cap} je Rechnung ist überschritten`,
   },
@@ -55,7 +67,13 @@ const PHRASES = {
       ? `karta pracy za ten dzień jest podpisana przez ${signedBy}, a nie przez kierownika budowy`
       : 'karta pracy za ten dzień nie jest podpisana przez kierownika budowy'),
     PARTIAL: ({ proven, claimed, unit }) => `potwierdzono tylko ${proven} z ${claimed} ${unit}`,
-    RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `stawka ${invoiced} jest wyższa niż umowna ${contract}, rozliczono według stawki umownej`,
+    ROLE_NO_RATE: ({ evidencedRole }) => `podpisana karta pracy wskazuje stanowisko ${evidencedRole}, dla którego umowa nie przewiduje stawki`,
+    ROLE_MISMATCH: ({ invoicedRole, evidencedRole, evidencedRate, rateApplied }) => (rateApplied
+      ? `zafakturowano jako ${invoicedRole}, ale podpisana karta pracy wskazuje ${evidencedRole}, dlatego rozliczono według stawki dla stanowiska ${evidencedRole} (${evidencedRate})`
+      : `zafakturowano jako ${invoicedRole}, ale podpisana karta pracy wskazuje ${evidencedRole}`),
+    RATE_ABOVE_CONTRACT: ({ invoiced, contract, paidAtContract }) => (paidAtContract
+      ? `stawka ${invoiced} jest wyższa niż umowna ${contract}, rozliczono według stawki umownej`
+      : `stawka ${invoiced} jest wyższa niż umowna ${contract}`),
     MATH_ERROR: ({ written, correct }) => `wartość pozycji ${written} powinna wynosić ${correct}`,
     OVER_CAP: ({ cap }) => `przekroczony umowny limit płatności ${cap} na fakturę`,
   },
@@ -70,7 +88,13 @@ const PHRASES = {
       ? `табель за цей день підписав ${signedBy}, а не керівник будівництва`
       : 'табель за цей день не підписаний керівником будівництва'),
     PARTIAL: ({ proven, claimed, unit }) => `підтверджено лише ${proven} з ${claimed} ${unit}`,
-    RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `ставка ${invoiced} вища за договірну ${contract}, тому оплачено за договірною ставкою`,
+    ROLE_NO_RATE: ({ evidencedRole }) => `у підписаному табелі зазначено посаду ${evidencedRole}, для якої в договорі немає погодженої ставки`,
+    ROLE_MISMATCH: ({ invoicedRole, evidencedRole, evidencedRate, rateApplied }) => (rateApplied
+      ? `виставлено як ${invoicedRole}, але в підписаному табелі зазначено ${evidencedRole}, тому оплачено за ставкою для ${evidencedRole} (${evidencedRate})`
+      : `виставлено як ${invoicedRole}, але в підписаному табелі зазначено ${evidencedRole}`),
+    RATE_ABOVE_CONTRACT: ({ invoiced, contract, paidAtContract }) => (paidAtContract
+      ? `ставка ${invoiced} вища за договірну ${contract}, тому оплачено за договірною ставкою`
+      : `ставка ${invoiced} вища за договірну ${contract}`),
     MATH_ERROR: ({ written, correct }) => `сума позиції ${written} має становити ${correct}`,
     OVER_CAP: ({ cap }) => `перевищено договірний ліміт оплати ${cap} за рахунок`,
   },
@@ -114,7 +138,7 @@ const BODIES = {
 function phraseKey(finding, kind) {
   if (finding.code !== 'UNPROVEN') return finding.code;
   const cause = finding.params?.cause;
-  if (cause === 'NO_RATE' || cause === 'UNIT_MISMATCH' || cause === 'EVIDENCE_USED') return cause;
+  if (['NO_RATE', 'UNIT_MISMATCH', 'EVIDENCE_USED', 'ROLE_NO_RATE'].includes(cause)) return cause;
   return kind === 'labour' ? 'NO_EVIDENCE_LABOUR' : 'NO_EVIDENCE_MATERIAL';
 }
 
@@ -149,6 +173,11 @@ export function buildMessageFacts({ contract, invoice, verification }) {
         correct: money(finding.params?.correctCents ?? 0),
         cap: money(finding.params?.capCents ?? 0),
         signedBy: finding.params?.signedBy ?? null,
+        paidAtContract: finding.params?.paidAtContract !== false,
+        invoicedRole: finding.params?.invoicedRole ?? line.role,
+        evidencedRole: finding.params?.evidencedRole ?? null,
+        evidencedRate: money(finding.params?.evidencedRateCents ?? 0),
+        rateApplied: Boolean(finding.params?.rateApplied),
       })).join('; '),
     }));
   return {

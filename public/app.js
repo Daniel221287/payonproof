@@ -51,6 +51,7 @@
     pen: ['M2 10l.8-2.8L8.4 1.6l2 2-5.6 5.6z'],
     empty: ['M6 1.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9z', 'M2.6 9.4l6.8-6.8'],
     copy: ['M4.2 4.2h5.8V10H4.2z', 'M2 7.8V2h5.8'],
+    swap: ['M1.8 4h7.6', 'M7.6 2l2 2-2 2', 'M10.2 8H2.6', 'M4.4 6l-2 2 2 2'],
   };
   function icon(name) {
     const svg = document.createElementNS(SVG_NS, 'svg');
@@ -68,6 +69,7 @@
   const VERDICTS = {
     PROVEN: { label: 'Proven', tone: 'ok', icon: 'check' },
     PARTIAL: { label: 'Partial', tone: 'warn', icon: 'half' },
+    ROLE_MISMATCH: { label: 'Trade differs', tone: 'warn', icon: 'swap' },
     RATE_ABOVE_CONTRACT: { label: 'Rate capped', tone: 'warn', icon: 'down' },
     MATH_ERROR: { label: 'Math error', tone: 'warn', icon: 'noteq' },
     OVER_CAP: { label: 'Over cap', tone: 'warn', icon: 'cap' },
@@ -426,11 +428,16 @@
 
   /* ---------- AG Grid ---------- */
 
+  /** Role as invoiced, plus the trade on the signed timesheet when it differs. */
+  function roleText(line) {
+    return line.timesheetRole ? `${line.role} (timesheet: ${line.timesheetRole})` : line.role;
+  }
+
   function subjectRenderer(params) {
     const line = params.data;
     const secondary = NARROW.matches
       ? `${money(line.payableCents)} of ${money(line.claimedCents)}`
-      : line.kind === 'labour' ? line.role : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
+      : line.kind === 'labour' ? roleText(line) : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
     return h('div', { class: 'cell-subject', title: `${line.subject}, ${secondary}` }, h('strong', { text: line.subject }), h('span', { text: secondary }));
   }
   function qtyRenderer(params) {
@@ -542,7 +549,7 @@
     }
     const node = state.grid?.getRowNode(line.id);
     if (node && !node.isSelected()) node.setSelected(true, true);
-    const what = line.kind === 'labour' ? line.role : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
+    const what = line.kind === 'labour' ? roleText(line) : (line.itemCode ? `Article ${line.itemCode}` : 'Material');
     const invoiced = `${qty(line.claimedQtyMilli)} ${line.unit} × ${money(line.unitPriceCents)} printed as ${money(line.claimedCents)}`;
     const payable = line.payableCents === 0
       ? `${money(0)}`
@@ -558,7 +565,10 @@
           ? h('ul', {}, line.evidence.map((item) => h('li', {}, h('span', { class: 'mono', text: item.id }), `: ${item.detail}`)))
           : 'None that proves this line'),
         h('dt', { text: 'Contract rate' }),
-        h('dd', { text: line.contractRateCents !== null ? `${money(line.contractRateCents)} per ${line.unit} (${line.contractRateName})` : 'No agreed rate in the contract' }),
+        h('dd', { text: line.contractRateCents === null
+          ? 'No agreed rate in the contract'
+          : `${money(line.contractRateCents)} per ${line.unit} (${line.contractRateName})${line.timesheetRateCents !== null && line.timesheetRateCents !== undefined
+            ? `; the signed timesheet says ${line.timesheetRole}: ${money(line.timesheetRateCents)} per ${line.unit}` : ''}` }),
         h('dt', { text: 'Payable' }),
         h('dd', {}, h('strong', { text: payable })),
         h('dt', { text: 'Why' }),

@@ -13,6 +13,9 @@
  *    never prove two invoice lines.
  *  - A line identical to an earlier line (same subject, date, quantity, price)
  *    that the remaining evidence cannot cover is a DUPLICATE.
+ *  - The trade on the signed timesheet must be the invoiced role (contract aliases count as
+ *    the same role). Otherwise the line is paid at the contract rate of the trade on the
+ *    timesheet (ROLE_MISMATCH), or not at all when that trade has no contract rate.
  *  - The unit price is capped at the contract rate (RATE_ABOVE_CONTRACT).
  *  - The printed line total must equal quantity x price to the cent (MATH_ERROR);
  *    the payable amount is always recomputed: proven quantity x allowed rate.
@@ -24,11 +27,11 @@ import { codeKey, matchKey, signerMatches } from './normalize.mjs';
 export const ENGINE_VERSION = 'payonproof-verify/1.1';
 
 export const VERDICTS = Object.freeze([
-  'PROVEN', 'PARTIAL', 'UNPROVEN', 'UNSIGNED', 'DUPLICATE', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP',
+  'PROVEN', 'PARTIAL', 'UNPROVEN', 'UNSIGNED', 'DUPLICATE', 'ROLE_MISMATCH', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP',
 ]);
 
 /** When a line has several findings, the first one in this list is its verdict. */
-const PRECEDENCE = ['DUPLICATE', 'UNPROVEN', 'UNSIGNED', 'PARTIAL', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP'];
+const PRECEDENCE = ['DUPLICATE', 'UNPROVEN', 'UNSIGNED', 'ROLE_MISMATCH', 'PARTIAL', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP'];
 
 /**
  * @typedef {{code: string, reason: string, params?: object}} Finding
@@ -192,13 +195,34 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
     /** @type {EvidenceUse[]} */
     const used = [];
     let provenMilli = 0;
+    /** Signed entries with another priced trade than the invoiced role, and the contract rate of that trade. */
+    const tradeRates = new Map();
+    const otherTradeUsed = [];
+    const unpricedTrades = [];
     if (priceable) {
       const candidates = isLabour
         ? evidence.entries.filter((entry) => entry.workerKey === matchKey(line.worker) && entry.date === line.date)
         : evidence.notes.filter((note) => note.date === line.date && note.rateKey === rate.rateKey);
-      const usable = isLabour
-        ? candidates.filter((entry) => entry.signed)
-        : candidates.filter((note) => note.unit === line.unit);
+      let usable;
+      if (isLabour) {
+        // Signed entries whose trade is the invoiced role come first, then entries with another priced
+        // trade (paid at that trade's rate). A trade without a contract rate proves nothing.
+        const sameRole = [];
+        const otherRole = [];
+        for (const entry of candidates.filter((candidate) => candidate.signed)) {
+          const entryTrade = entry.role ? (index.labour.get(matchKey(entry.role)) ?? null) : rate;
+          if (entryTrade && entryTrade.rateKey === rate.rateKey) sameRole.push(entry);
+          else if (entryTrade && entryTrade.unit === line.unit) {
+            otherRole.push(entry);
+            tradeRates.set(entry, entryTrade);
+          } else {
+            unpricedTrades.push(entry);
+          }
+        }
+        usable = [...sameRole, ...otherRole];
+      } else {
+        usable = candidates.filter((note) => note.unit === line.unit);
+      }
       const available = usable.reduce((sum, item) => sum + item.remaining, 0);
 
       if (earlierId !== undefined && available < line.quantityMilli) {
@@ -211,7 +235,11 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
           ? `No timesheet entry for ${line.worker} on ${line.date}.`
           : `No delivery note for ${rate.name} on ${line.date}.`, { cause: 'NO_EVIDENCE' });
       } else if (usable.length === 0) {
-        if (isLabour) {
+        if (isLabour && unpricedTrades.length > 0) {
+          const trades = [...new Set(unpricedTrades.map((entry) => entry.role))].join(', ');
+          add('UNPROVEN', `Invoiced as ${line.role}, but the signed timesheet (${listIds(unpricedTrades)}) says ${line.worker} worked as ${trades}, and contract ${contract.contractId} has no rate per ${unitLabel} for that trade.`,
+            { cause: 'ROLE_NO_RATE', invoicedRole: line.role, evidencedRole: trades });
+        } else if (isLabour) {
           const problems = [...new Set(candidates.map((entry) => entry.signerNote ?? 'not signed by the site manager'))];
           const wrongSigners = [...new Set(candidates.map((entry) => (entry.signerNote ? entry.signedBy : null)))];
           add('UNSIGNED', `Timesheet entry ${listIds(candidates)} for ${line.worker} on ${line.date} is ${problems.join('; ')}.`, {
@@ -233,6 +261,7 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
           item.remaining -= take;
           item.usedBy.push(line.id);
           need -= take;
+          if (tradeRates.has(item)) otherTradeUsed.push(item);
           used.push({
             id: item.id,
             qtyMilli: take,
@@ -252,12 +281,25 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
       }
     }
 
+    // The allowed rate never exceeds the invoiced price, the contract rate of the invoiced role or the
+    // contract rate of the trade on the signed timesheet (the lowest one when the hours used carry several).
     let payRateCents = line.unitPriceCents;
-    if (priceable && line.unitPriceCents > rate.priceCents) {
-      payRateCents = rate.priceCents;
+    const aboveContract = priceable && line.unitPriceCents > rate.priceCents;
+    if (aboveContract) payRateCents = rate.priceCents;
+    let tradeEntry = null;
+    for (const entry of otherTradeUsed) if (!tradeEntry || tradeRates.get(entry).priceCents < tradeRates.get(tradeEntry).priceCents) tradeEntry = entry;
+    const trade = tradeEntry ? tradeRates.get(tradeEntry) : null;
+    const tradeLowers = Boolean(trade && trade.priceCents < payRateCents);
+    if (trade) {
+      if (tradeLowers) payRateCents = trade.priceCents;
+      add('ROLE_MISMATCH',
+        `Invoiced as ${line.role} (${money(rate.priceCents)}/${rate.unitAsWritten}); the signed timesheet (${listIds(otherTradeUsed)}) says ${tradeEntry.role} (${money(trade.priceCents)}/${trade.unitAsWritten}).${tradeLowers ? ` Paid at the ${trade.name} rate.` : ''}`,
+        { invoicedRole: line.role, evidencedRole: tradeEntry.role, invoicedRateCents: rate.priceCents, evidencedRateCents: trade.priceCents, rateApplied: tradeLowers, unit: unitLabel });
+    }
+    if (aboveContract) {
       add('RATE_ABOVE_CONTRACT',
-        `Invoiced at ${money(line.unitPriceCents)}/${unitLabel}; the contract rate for ${rate.name} is ${money(rate.priceCents)}/${rate.unitAsWritten}. Paid at the contract rate.`,
-        { invoicedCents: line.unitPriceCents, contractCents: rate.priceCents, unit: unitLabel });
+        `Invoiced at ${money(line.unitPriceCents)}/${unitLabel}; the contract rate for ${rate.name} is ${money(rate.priceCents)}/${rate.unitAsWritten}.${tradeLowers ? '' : ' Paid at the contract rate.'}`,
+        { invoicedCents: line.unitPriceCents, contractCents: rate.priceCents, unit: unitLabel, paidAtContract: !tradeLowers });
     }
 
     const correctCents = lineAmountCents(line.quantityMilli, line.unitPriceCents);
@@ -288,6 +330,8 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
       unitPriceCents: line.unitPriceCents,
       contractRateCents: rate ? rate.priceCents : null,
       contractRateName: rate ? rate.name : null,
+      timesheetRole: tradeEntry ? tradeEntry.role : null,
+      timesheetRateCents: trade ? trade.priceCents : null,
       payRateCents,
       claimedCents: line.lineTotalCents,
       correctCents,

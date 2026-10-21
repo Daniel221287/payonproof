@@ -100,3 +100,23 @@ test('a sign-off by the wrong person is named in the message, in all four langua
     assert.deepEqual(factCheckMessage(text, facts), []);
   }
 });
+
+test('role upcoding is explained in the message in all four languages', async () => {
+  const sample = samples.find((s) => s.id === 'overbilled');
+  const documents = sample.documents.map((doc) => (doc.type === 'invoice'
+    ? { ...doc, text: doc.text.replace('| Steel fixer | 2026-09-14 | 9.00  | h    | 41.00      | 369.00', '| Foreman     | 2026-09-14 | 9.00  | h    | 47.00      | 423.00') }
+    : doc));
+  const { input } = assembleCaseInput(await extractDocuments(documents, { provider: offline }));
+  const expected = {
+    en: /Line 1 \(Adam Kordecki, 14\/09\/2026\): invoiced €423\.00, paid €369\.00\. Reason: invoiced as Foreman, but the signed timesheet shows Steel fixer, so the Steel fixer rate of €41\.00 is paid\./,
+    de: /berechnet als Foreman, laut unterschriebenem Stundenzettel aber Steel fixer, daher wird der Satz für Steel fixer von 41,00\s€ vergütet/,
+    pl: /zafakturowano jako Foreman, ale podpisana karta pracy wskazuje Steel fixer, dlatego rozliczono według stawki dla stanowiska Steel fixer \(41,00\s€\)/,
+    uk: /виставлено як Foreman, але в підписаному табелі зазначено Steel fixer, тому оплачено за ставкою для Steel fixer \(41,00\sEUR\)/,
+  };
+  for (const [language, pattern] of Object.entries(expected)) {
+    const facts = buildMessageFacts({ contract: { ...input.contract, language }, invoice: input.invoice, verification: verifyCase(input) });
+    const text = templateMessage(facts);
+    assert.match(text, pattern, language);
+    assert.deepEqual(factCheckMessage(text, facts), []);
+  }
+});

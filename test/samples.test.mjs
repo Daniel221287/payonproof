@@ -100,3 +100,17 @@ test('offline demo: a timesheet row signed by the worker himself no longer prove
   assert.match(line1.reason, /signed by T\. Brzezina, not by the site manager Katrin Vogelsang/);
   assert.equal(result.lines.find((line) => line.id === '2').verdict, 'PROVEN');
 });
+
+test('offline demo: a steel fixer billed as foreman (role upcoding) is paid at the steel fixer rate', async () => {
+  const sample = samples.find((s) => s.id === 'overbilled');
+  const documents = sample.documents.map((doc) => (doc.type === 'invoice'
+    ? { ...doc, text: doc.text.replace('| Steel fixer | 2026-09-14 | 9.00  | h    | 41.00      | 369.00', '| Foreman     | 2026-09-14 | 9.00  | h    | 47.00      | 423.00') }
+    : doc));
+  const { input } = assembleCaseInput(await extractDocuments(documents, { provider: offline }));
+  const result = verifyCase(input);
+  const line1 = result.lines.find((line) => line.id === '1');
+  assert.equal(line1.verdict, 'ROLE_MISMATCH');
+  assert.equal(line1.payableCents, 36900);
+  assert.match(line1.reason, /^Invoiced as Foreman \(€47\.00\/h\); the signed timesheet \(TS-NG-38#1\) says Steel fixer \(€41\.00\/h\)\./);
+  assert.equal(result.totals.payableCents, 503500, 'the payable total does not move');
+});

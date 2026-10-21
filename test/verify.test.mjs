@@ -5,6 +5,7 @@ import { verifyCase } from '../src/verify.mjs';
 
 const RATES = [
   { kind: 'labour', name: 'Steel fixer', aliases: ['Rebar fixer', 'Zbrojarz'], code: null, unit: 'h', unitAsWritten: 'h', priceCents: 4100 },
+  { kind: 'labour', name: 'Foreman', aliases: ['Brygadzista'], code: null, unit: 'h', unitAsWritten: 'h', priceCents: 4700 },
   { kind: 'labour', name: 'Formwork carpenter', aliases: [], code: null, unit: 'h', unitAsWritten: 'h', priceCents: 3950 },
   { kind: 'material', name: 'Ready-mix concrete C30/37', aliases: ['Beton C30/37'], code: 'RMC-C30', unit: 'm3', unitAsWritten: 'm3', priceCents: 12800 },
 ];
@@ -261,4 +262,74 @@ test('a sheet that names no site manager keeps counting signed entries, with a w
   });
   assert.equal(byId(unnamed, '1').verdict, 'PROVEN');
   assert.match(unnamed.caseFindings[0].reason, /1 signed entry has no signer name, so the signer could not be compared with the site manager Katrin Vogelsang/);
+});
+
+const foreman = (id, worker, date, hours, priceCents = 4700, totalCents = Math.round(hours * priceCents)) => ({ ...labour(id, worker, date, hours, priceCents, totalCents), role: 'Foreman' });
+
+test('ROLE_MISMATCH: a steel fixer invoiced as foreman is paid at the steel fixer rate', () => {
+  const result = run({
+    lines: [foreman('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { role: 'Steel fixer' })],
+  });
+  const line = byId(result, '1');
+  assert.equal(line.verdict, 'ROLE_MISMATCH');
+  assert.equal(line.payRateCents, 4100);
+  assert.equal(line.payableCents, 36900);
+  assert.equal(line.disputedCents, 5400);
+  assert.equal(line.timesheetRole, 'Steel fixer');
+  assert.equal(line.timesheetRateCents, 4100);
+  assert.equal(line.reason, 'Invoiced as Foreman (€47.00/h); the signed timesheet (TS#1) says Steel fixer (€41.00/h). Paid at the Steel fixer rate.');
+});
+
+test('roles match through contract aliases; a trade on the timesheet without a contract rate proves nothing', () => {
+  const alias = run({
+    lines: [{ ...labour('1', 'Jan Nowak', '2026-09-16', 8), role: 'Zbrojarz' }],
+    entries: [entry('Nowak, Jan', '2026-09-16', 8, true, { role: 'Steel fixer' })],
+  });
+  assert.equal(byId(alias, '1').verdict, 'PROVEN');
+  const unpriced = run({
+    lines: [labour('1', 'Jan Nowak', '2026-09-16', 8)],
+    entries: [entry('Nowak, Jan', '2026-09-16', 8, true, { role: 'Crane operator' })],
+  });
+  const line = byId(unpriced, '1');
+  assert.equal(line.verdict, 'UNPROVEN');
+  assert.equal(line.findings[0].params.cause, 'ROLE_NO_RATE');
+  assert.equal(line.payableCents, 0);
+  assert.match(line.reason, /says Jan Nowak worked as Crane operator, and contract SC-1 has no rate per h for that trade/);
+});
+
+test('ROLE_MISMATCH never raises a rate: a dearer trade on the timesheet is noted, the invoice price stays the limit', () => {
+  const result = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { role: 'Foreman' })],
+  });
+  const line = byId(result, '1');
+  assert.equal(line.verdict, 'ROLE_MISMATCH');
+  assert.equal(line.payableCents, 36900, 'paid as invoiced, never at the higher foreman rate');
+  assert.equal(line.findings[0].params.rateApplied, false);
+  assert.doesNotMatch(line.reason, /Paid at/);
+});
+
+test('hours under two trades on one day prove the matching invoice lines', () => {
+  const result = run({
+    lines: [foreman('1', 'Adam Kordecki', '2026-09-14', 4), labour('2', 'Adam Kordecki', '2026-09-14', 5)],
+    entries: [
+      entry('Kordecki, Adam', '2026-09-14', 5, true, { role: 'Steel fixer' }),
+      entry('Kordecki, Adam', '2026-09-14', 4, true, { role: 'Foreman' }),
+    ],
+  });
+  assert.deepEqual(result.lines.map((line) => [line.verdict, line.payableCents]), [['PROVEN', 18800], ['PROVEN', 20500]]);
+});
+
+test('a rate above the contract and a different trade: the lower trade rate applies and is named', () => {
+  const result = run({
+    lines: [foreman('1', 'Adam Kordecki', '2026-09-14', 9, 5000, 45000)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { role: 'Steel fixer' })],
+  });
+  const line = byId(result, '1');
+  assert.deepEqual(line.findings.map((f) => f.code), ['ROLE_MISMATCH', 'RATE_ABOVE_CONTRACT']);
+  assert.equal(line.verdict, 'ROLE_MISMATCH');
+  assert.equal(line.payableCents, 36900);
+  assert.equal(line.findings[1].params.paidAtContract, false);
+  assert.match(line.reason, /the contract rate for Foreman is €47\.00\/h\.$/);
 });
