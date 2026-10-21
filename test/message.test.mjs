@@ -78,7 +78,7 @@ test('an AI draft that drops or changes a fact is replaced by the template', asy
   const invented = templateMessage(facts).replace('€5,035.00', '€5,300.00');
   const draft = await draftMessage({ provider: fakeAi(invented), facts });
   assert.equal(draft.source, 'template');
-  assert.match(draft.note, /Two AI drafts failed the fact check \(the second left out payable total €5,035\.00/);
+  assert.match(draft.note, /Two AI drafts failed the fact check \(the second missed payable total €5,035\.00/);
   const missingLine = factCheckMessage('We pay €5,035.00 of €6,338.00. Line 4: €0.00.', facts);
   assert.ok(missingLine.includes('line 5'));
   const failing = { ...fakeAi(''), async generateJson() { throw new AiError('AI_TIMEOUT', 'Gemini did not answer within 60 s.'); } };
@@ -97,9 +97,9 @@ test('a draft that misses a fact gets one second attempt that names what was mis
   const draft = await draftMessage({ provider, facts });
   assert.equal(draft.source, 'ai');
   assert.equal(draft.text, good);
-  assert.match(draft.note, /^The first AI draft left out payable total €5,035\.00; a second draft passed the fact check\.$/);
+  assert.match(draft.note, /^The first AI draft missed payable total €5,035\.00; a second draft passed the fact check\.$/);
   assert.equal(requests.length, 2);
-  assert.match(requests[1].user, /A previous draft left out: payable total €5,035\.00\. Write the whole message again/);
+  assert.match(requests[1].user, /A previous draft missed: payable total €5,035\.00\. Write the whole message again/);
   assert.equal(requests[1].system, requests[0].system);
   const once = [];
   await draftMessage({ provider: { ...fakeAi(good), async generateJson(request) { once.push(request); return { json: { message: good } }; } }, facts });
@@ -188,4 +188,25 @@ test('a printed invoice total below the lines caps the payout and the message na
     const localized = buildMessageFacts({ contract: { ...input.contract, language }, invoice: input.invoice, verification });
     assert.deepEqual(factCheckMessage(templateMessage(localized), localized), [], language);
   }
+});
+
+test('the fact check also wants the agreed language: a draft for a Ukrainian crew written in Russian is refused', async () => {
+  const facts = await factsFor('rate-drift');
+  assert.equal(facts.language, 'uk');
+  const good = templateMessage(facts);
+  assert.deepEqual(factCheckMessage(good, facts), []);
+  // The same amounts and line numbers, but Russian wording (as a live draft did).
+  const russian = `Уважаемый партнер, оплата по счету произведена. Строка 1: ${facts.disputedLines[0].payable}. `
+    + facts.disputedLines.slice(1).map((line) => `Строка ${line.id}: ${line.payable}.`).join(' ')
+    + ` Итого ${facts.claimed}, оплачено ${facts.payable}. С уважением.`;
+  assert.deepEqual(factCheckMessage(russian, facts), ['the whole text in Ukrainian']);
+  for (const language of ['en', 'de', 'pl', 'uk']) {
+    const localized = await factsFor('overbilled', language);
+    assert.deepEqual(factCheckMessage(templateMessage(localized), localized), [], `${language} template passes`);
+  }
+  const english = await factsFor('overbilled', 'en');
+  const german = await factsFor('overbilled', 'de');
+  assert.ok(factCheckMessage(templateMessage(german), english).includes('the whole text in English'));
+  const polish = await factsFor('overbilled', 'pl');
+  assert.ok(factCheckMessage(templateMessage(english), polish).includes('the whole text in Polish'));
 });

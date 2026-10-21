@@ -15,6 +15,7 @@
     "demo": "node server.mjs --mock-paypal",
     "test": "node --test",
     "e2e": "node scripts/e2e-screenshots.mjs",
+    "live-check": "node scripts/live-check.mjs",
     "vendor": "node scripts/copy-vendor.mjs"
   },
   "dependencies": {

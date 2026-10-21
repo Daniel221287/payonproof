@@ -253,6 +253,16 @@ export function templateMessage(facts) {
 
 const squash = (text) => String(text).replace(/\s+/g, ' ');
 
+// Is the whole text in the agreed language? Cheap script and word checks that catch a draft in the
+// wrong language (a live Nemotron draft for a Ukrainian crew came back in Russian).
+const CYRILLIC = /\p{Script=Cyrillic}/u;
+const LANGUAGE_CHECKS = {
+  uk: (text) => /[іїєґІЇЄҐ]/u.test(text) && !/[ыэъёЫЭЪЁ]/u.test(text),
+  pl: (text) => !CYRILLIC.test(text) && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/u.test(text),
+  de: (text) => !CYRILLIC.test(text) && /\b(und|der|die|das|wir|Sie|Ihre?)\b/u.test(text),
+  en: (text) => !CYRILLIC.test(text) && /\b(the|and|we|you|your)\b/iu.test(text),
+};
+
 /**
  * Check an AI draft against the facts. Returns the list of missing facts (empty = passed).
  * @param {string} text
@@ -277,6 +287,8 @@ export function factCheckMessage(text, facts) {
     if (!body.includes(squash(line.difference))) missing.push(`difference ${line.difference} of line ${line.id} that may be invoiced`);
   }
   if (facts.totalNote && !body.includes(squash(facts.totalNote.printed))) missing.push(`printed invoice total ${facts.totalNote.printed}`);
+  const inLanguage = LANGUAGE_CHECKS[facts.language];
+  if (inLanguage && !inLanguage(body)) missing.push(`the whole text in ${facts.languageName}`);
   return missing;
 }
 
@@ -298,12 +310,12 @@ export async function draftMessage({ provider, facts }) {
   }
   const system = [
     'You write short payment notices from a main contractor\'s accounts-payable team to a subcontractor.',
-    `Write in ${facts.languageName}. Be polite, plain and concrete. At most 170 words. No subject line.`,
+    `Write the whole message in ${facts.languageName} only. Be polite, plain and concrete. At most 170 words. No subject line.`,
     'Use only the facts in the JSON. Copy every amount exactly as written there, including currency symbols.',
     'Mention every disputed line by its line number, with its invoiced and paid amounts and its reasons.',
     'Mention every line in noteLines by its line number: it is paid as invoiced, and the subcontractor may invoice the difference shown.',
     'If totalNote is present, say that the invoice total it shows does not match the sum of the lines.',
-    'Do not add facts, promises, deadlines, threats or legal claims.',
+    'Do not add facts, promises, deadlines, threats or legal claims. Never mention the JSON, its field names or how the message was made.',
     'Answer with JSON only: {"message": "<the message text>"}',
   ].join('\n');
   const ask = async (user) => {
@@ -318,11 +330,11 @@ export async function draftMessage({ provider, facts }) {
     }
     // One more draft, told exactly what the fact check missed. It is checked the same way.
     const left = first.missing.slice(0, 6).join('; ');
-    const second = await ask(`${JSON.stringify(facts)}\n\nA previous draft left out: ${left}. Write the whole message again and include each of them exactly as written in the JSON.`);
+    const second = await ask(`${JSON.stringify(facts)}\n\nA previous draft missed: ${left}. Write the whole message again and get each of them right, with amounts exactly as written in the JSON.`);
     if (second.missing.length === 0) {
-      return { text: second.text, source: 'ai', label: `AI draft, fact-checked (${provider.label})`, note: `The first AI draft left out ${first.missing.slice(0, 3).join(', ')}; a second draft passed the fact check.` };
+      return { text: second.text, source: 'ai', label: `AI draft, fact-checked (${provider.label})`, note: `The first AI draft missed ${first.missing.slice(0, 3).join(', ')}; a second draft passed the fact check.` };
     }
-    return { text: template(), source: 'template', label: 'Template, no AI used', note: `Two AI drafts failed the fact check (the second left out ${second.missing.slice(0, 3).join(', ')}), so the template was used.` };
+    return { text: template(), source: 'template', label: 'Template, no AI used', note: `Two AI drafts failed the fact check (the second missed ${second.missing.slice(0, 3).join(', ')}), so the template was used.` };
   } catch (error) {
     if (!(error instanceof AiError)) throw error;
     return { text: template(), source: 'template', label: 'Template, no AI used', note: `The AI draft failed (${error.message.replace(/\.+$/, '')}), so the template was used.` };
