@@ -46,7 +46,7 @@ test('every extraction records provider, model, duration and the SHA-256 of the 
   assert.match(extraction.inputSha256, /^[0-9a-f]{64}$/);
   assert.equal(extraction.inputSha256, documentsSha256(DOCS));
   assert.notEqual(documentsSha256([{ ...DOCS[0], text: 'changed' }]), documentsSha256([DOCS[0]]));
-  assert.equal(extraction.promptVersion, 'extract-v1');
+  assert.equal(extraction.promptVersion, 'extract-v2');
 });
 
 test('each document is extracted in its own model call, wrapped as untrusted data', async () => {
@@ -60,6 +60,14 @@ test('each document is extracted in its own model call, wrapped as untrusted dat
   }
   const prompt = buildExtractionPrompt('invoice', 'X');
   assert.match(prompt.system, /"lineTotal": number \(the line amount AS PRINTED/);
+});
+
+test('the timesheet prompt asks for the site manager and the signer as printed; the engine decides who counts', () => {
+  const { system } = buildExtractionPrompt('timesheet', 'X');
+  assert.match(system, /"siteManager": string \| null \(name of the main contractor's site manager printed on the sheet/);
+  assert.match(system, /"signed": boolean \(true if the row shows a signature or sign-off by anyone/);
+  assert.match(system, /"signedBy": string \| null \(the name written in that row's sign-off, exactly as printed, whoever it is/);
+  assert.match(system, /"role": string \| null \(trade as printed in that row\)/);
 });
 
 test('model arithmetic is never trusted: totals are recomputed in integer cents', async () => {

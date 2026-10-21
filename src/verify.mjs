@@ -6,7 +6,8 @@
  * integer cents, the reasons and the evidence ids used.
  *
  * Rules (documented in README "Verification rules"):
- *  - Labour is proven only by SIGNED timesheet entries for the same worker and date.
+ *  - Labour is proven only by timesheet entries for the same worker and date that are SIGNED BY THE
+ *    SITE MANAGER named on the sheet (a sign-off by anyone else counts as not signed).
  *  - Material is proven only by delivery notes for the same contract item, date and unit.
  *  - Evidence is consumed line by line, so one signed day or one delivery can
  *    never prove two invoice lines.
@@ -18,9 +19,9 @@
  *  - A contract payment cap limits the cumulative payable amount (OVER_CAP).
  */
 import { formatMoney, formatQuantity, isArithmeticallyConsistent, lineAmountCents } from './money.mjs';
-import { codeKey, matchKey } from './normalize.mjs';
+import { codeKey, matchKey, signerMatches } from './normalize.mjs';
 
-export const ENGINE_VERSION = 'payonproof-verify/1.0';
+export const ENGINE_VERSION = 'payonproof-verify/1.1';
 
 export const VERDICTS = Object.freeze([
   'PROVEN', 'PARTIAL', 'UNPROVEN', 'UNSIGNED', 'DUPLICATE', 'RATE_ABOVE_CONTRACT', 'MATH_ERROR', 'OVER_CAP',
@@ -60,22 +61,51 @@ function resolveMaterialRate(index, item, itemCode) {
 
 /**
  * Assign stable evidence ids: timesheet entries "<sheet>#<n>", delivery notes by their number.
+ * An entry counts as signed only when it is signed by the site manager named on its sheet. A sign-off
+ * by anyone else makes it unsigned (with the reason in `signerNote`). When the sheet names no site
+ * manager, or a sign-off has no name, the signer cannot be checked: the entry still counts as signed
+ * and a warning in `signerWarnings` says so.
  * @param {Array<{docId: string, sheetRef?: string|null, siteManager?: string|null, entries: object[]}>} timesheets
  * @param {Array<{docId: string, notes: object[]}>} deliveryNotes
  */
 export function buildEvidence(timesheets, deliveryNotes) {
   const entries = [];
+  const signerWarnings = [];
   for (const sheet of timesheets) {
     const sheetId = sheet.sheetRef || sheet.docId;
+    const manager = sheet.siteManager || null;
+    let unchecked = 0;
     sheet.entries.forEach((entry, position) => {
+      let signed = entry.signed === true;
+      let signerNote = null;
+      if (signed && manager && entry.signedBy) {
+        if (!signerMatches(entry.signedBy, manager)) {
+          signed = false;
+          signerNote = `signed by ${entry.signedBy}, not by the site manager ${manager}`;
+        }
+      } else if (signed) {
+        unchecked += 1;
+      }
       entries.push({
         ...entry,
         id: `${sheetId}#${entry.ref || position + 1}`,
+        signedAsWritten: entry.signed === true,
+        signed,
+        signerNote,
         workerKey: matchKey(entry.worker),
-        remaining: entry.signed ? entry.hoursMilli : 0,
+        remaining: signed ? entry.hoursMilli : 0,
         usedBy: [],
       });
     });
+    if (unchecked > 0) {
+      const count = `${unchecked} signed ${unchecked === 1 ? 'entry' : 'entries'}`;
+      signerWarnings.push({
+        code: 'SIGNER_NOT_CHECKED', severity: 'warning',
+        reason: manager
+          ? `Timesheet ${sheetId}: ${count} ${unchecked === 1 ? 'has' : 'have'} no signer name, so the signer could not be compared with the site manager ${manager}.`
+          : `Timesheet ${sheetId} does not name the site manager, so the signer of its ${count} could not be checked.`,
+      });
+    }
   }
   const notes = [];
   const counts = new Map();
@@ -90,7 +120,7 @@ export function buildEvidence(timesheets, deliveryNotes) {
       });
     }
   }
-  return { entries, notes };
+  return { entries, notes, signerWarnings };
 }
 
 function listIds(items) {
@@ -114,7 +144,7 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
     note.itemKey = matchKey(note.item);
   }
 
-  const caseFindings = [];
+  const caseFindings = [...evidence.signerWarnings];
   if (invoice.currency !== contract.currency) {
     caseFindings.push({
       code: 'CURRENCY_MISMATCH', severity: 'blocker',
@@ -182,7 +212,12 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
           : `No delivery note for ${rate.name} on ${line.date}.`, { cause: 'NO_EVIDENCE' });
       } else if (usable.length === 0) {
         if (isLabour) {
-          add('UNSIGNED', `Timesheet entry ${listIds(candidates)} for ${line.worker} on ${line.date} is not signed by the site manager.`, { evidence: listIds(candidates) });
+          const problems = [...new Set(candidates.map((entry) => entry.signerNote ?? 'not signed by the site manager'))];
+          const wrongSigners = [...new Set(candidates.map((entry) => (entry.signerNote ? entry.signedBy : null)))];
+          add('UNSIGNED', `Timesheet entry ${listIds(candidates)} for ${line.worker} on ${line.date} is ${problems.join('; ')}.`, {
+            evidence: listIds(candidates),
+            signedBy: wrongSigners.length === 1 && wrongSigners[0] ? wrongSigners[0] : null,
+          });
         } else {
           add('UNPROVEN', `Delivery note ${listIds(candidates)} records a different unit than the invoice (${unitLabel}).`, { cause: 'UNIT_MISMATCH' });
         }
@@ -210,7 +245,7 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
         if (provenMilli < line.quantityMilli) {
           const unsignedMilli = isLabour ? candidates.filter((entry) => !entry.signed).reduce((sum, entry) => sum + entry.hoursMilli, 0) : 0;
           add('PARTIAL', isLabour
-            ? `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} h are on a signed timesheet (${listIds(used)})${unsignedMilli ? `; ${qty(unsignedMilli)} h are unsigned` : ''}.`
+            ? `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} h are on a signed timesheet (${listIds(used)})${unsignedMilli ? `; ${qty(unsignedMilli)} h are not signed by the site manager` : ''}.`
             : `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} ${unitLabel} were delivered (${listIds(used)}).`,
           { provenMilli, claimedMilli: line.quantityMilli, unit: unitLabel });
         }

@@ -86,3 +86,17 @@ test('edited sample text is read as edited (offline demo: change a number, see t
   const line7 = verifyCase(input).lines.find((line) => line.id === '7');
   assert.equal(line7.verdict, 'PROVEN');
 });
+
+test('offline demo: a timesheet row signed by the worker himself no longer proves his hours', async () => {
+  const sample = samples.find((s) => s.id === 'honest');
+  const documents = sample.documents.map((doc) => (doc.type === 'timesheet'
+    ? { ...doc, text: doc.text.replace('| 8.00  | signed K. Vogelsang', '| 8.00  | signed T. Brzezina') }
+    : doc));
+  const { input } = assembleCaseInput(await extractDocuments(documents, { provider: offline }));
+  const result = verifyCase(input);
+  const line1 = result.lines.find((line) => line.id === '1');
+  assert.equal(line1.verdict, 'UNSIGNED');
+  assert.equal(line1.payableCents, 0);
+  assert.match(line1.reason, /signed by T\. Brzezina, not by the site manager Katrin Vogelsang/);
+  assert.equal(result.lines.find((line) => line.id === '2').verdict, 'PROVEN');
+});

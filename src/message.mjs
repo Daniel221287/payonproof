@@ -21,7 +21,9 @@ const PHRASES = {
     NO_RATE: () => 'no agreed rate in the contract',
     UNIT_MISMATCH: () => 'the unit does not match the contract',
     EVIDENCE_USED: () => 'the evidence is already used by another line',
-    UNSIGNED: () => 'the timesheet for this day is not signed by the site manager',
+    UNSIGNED: ({ signedBy }) => (signedBy
+      ? `the timesheet for this day is signed by ${signedBy}, not by the site manager`
+      : 'the timesheet for this day is not signed by the site manager'),
     PARTIAL: ({ proven, claimed, unit }) => `only ${proven} of ${claimed} ${unit} are proven`,
     RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `the rate ${invoiced} is above the contract rate ${contract}, so the contract rate is paid`,
     MATH_ERROR: ({ written, correct }) => `the line total ${written} should be ${correct}`,
@@ -34,7 +36,9 @@ const PHRASES = {
     NO_RATE: () => 'kein vereinbarter Preis im Vertrag',
     UNIT_MISMATCH: () => 'die Einheit entspricht nicht dem Vertrag',
     EVIDENCE_USED: () => 'der Nachweis ist bereits einer anderen Position zugeordnet',
-    UNSIGNED: () => 'der Stundenzettel für diesen Tag ist nicht von der Bauleitung unterschrieben',
+    UNSIGNED: ({ signedBy }) => (signedBy
+      ? `der Stundenzettel für diesen Tag ist von ${signedBy} unterschrieben, nicht von der Bauleitung`
+      : 'der Stundenzettel für diesen Tag ist nicht von der Bauleitung unterschrieben'),
     PARTIAL: ({ proven, claimed, unit }) => `nur ${proven} von ${claimed} ${unit} sind nachgewiesen`,
     RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `der Satz ${invoiced} liegt über dem Vertragssatz ${contract}, vergütet wird der Vertragssatz`,
     MATH_ERROR: ({ written, correct }) => `der Positionsbetrag ${written} müsste ${correct} lauten`,
@@ -47,7 +51,9 @@ const PHRASES = {
     NO_RATE: () => 'brak uzgodnionej stawki w umowie',
     UNIT_MISMATCH: () => 'jednostka jest niezgodna z umową',
     EVIDENCE_USED: () => 'dokument potwierdzający został już przypisany do innej pozycji',
-    UNSIGNED: () => 'karta pracy za ten dzień nie jest podpisana przez kierownika budowy',
+    UNSIGNED: ({ signedBy }) => (signedBy
+      ? `karta pracy za ten dzień jest podpisana przez ${signedBy}, a nie przez kierownika budowy`
+      : 'karta pracy za ten dzień nie jest podpisana przez kierownika budowy'),
     PARTIAL: ({ proven, claimed, unit }) => `potwierdzono tylko ${proven} z ${claimed} ${unit}`,
     RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `stawka ${invoiced} jest wyższa niż umowna ${contract}, rozliczono według stawki umownej`,
     MATH_ERROR: ({ written, correct }) => `wartość pozycji ${written} powinna wynosić ${correct}`,
@@ -60,7 +66,9 @@ const PHRASES = {
     NO_RATE: () => 'у договорі немає погодженої ставки',
     UNIT_MISMATCH: () => 'одиниця виміру не відповідає договору',
     EVIDENCE_USED: () => 'підтвердження вже зараховано до іншої позиції',
-    UNSIGNED: () => 'табель за цей день не підписаний керівником будівництва',
+    UNSIGNED: ({ signedBy }) => (signedBy
+      ? `табель за цей день підписав ${signedBy}, а не керівник будівництва`
+      : 'табель за цей день не підписаний керівником будівництва'),
     PARTIAL: ({ proven, claimed, unit }) => `підтверджено лише ${proven} з ${claimed} ${unit}`,
     RATE_ABOVE_CONTRACT: ({ invoiced, contract }) => `ставка ${invoiced} вища за договірну ${contract}, тому оплачено за договірною ставкою`,
     MATH_ERROR: ({ written, correct }) => `сума позиції ${written} має становити ${correct}`,
@@ -140,6 +148,7 @@ export function buildMessageFacts({ contract, invoice, verification }) {
         written: money(finding.params?.writtenCents ?? 0),
         correct: money(finding.params?.correctCents ?? 0),
         cap: money(finding.params?.capCents ?? 0),
+        signedBy: finding.params?.signedBy ?? null,
       })).join('; '),
     }));
   return {

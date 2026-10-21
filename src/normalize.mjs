@@ -34,6 +34,51 @@ export function matchKey(text) {
     .join(' ');
 }
 
+/** Name parts, folded to letters only: "K. Vogelsang" -> ["k", "vogelsang"]. */
+function nameTokens(text) {
+  return String(text ?? '')
+    .split(/[\s.,]+/)
+    .map((part) => foldText(part).replace(/[^\p{L}]+/gu, ''))
+    .filter(Boolean);
+}
+
+/**
+ * Can this sign-off be the named person? The person's surname (the last full name part, or the
+ * part before a comma: "Vogelsang, Katrin") must be written in full, in any order and with
+ * diacritics folded, and every other name or initial on the sign-off must fit one of the person's
+ * given names. "K. Vogelsang", "Vogelsang K." and "Katrin Vogelsang" fit "Katrin Vogelsang";
+ * "T. Brzezina", "T. Vogelsang" and "K.V." do not.
+ * @param {unknown} signer name as written in the sign-off
+ * @param {unknown} person name of the person who has to sign
+ * @returns {boolean}
+ */
+export function signerMatches(signer, person) {
+  const raw = String(person ?? '');
+  const comma = raw.indexOf(',');
+  let surname = null;
+  let given = [];
+  if (comma >= 0) {
+    const before = nameTokens(raw.slice(0, comma));
+    surname = before.at(-1) ?? null;
+    given = [...before.slice(0, -1), ...nameTokens(raw.slice(comma + 1))];
+  } else {
+    const parts = nameTokens(raw);
+    const at = parts.findLastIndex((part) => part.length > 1);
+    if (at >= 0) {
+      surname = parts[at];
+      given = parts.filter((_, index) => index !== at);
+    }
+  }
+  if (!surname) return false;
+  const signed = nameTokens(signer);
+  const at = signed.indexOf(surname);
+  if (at < 0) return false;
+  const fits = (part, name) => (part.length === 1 || name.length === 1 ? part[0] === name[0] : part === name);
+  return signed
+    .filter((_, index) => index !== at)
+    .every((part) => given.length === 0 || given.some((name) => fits(part, name)));
+}
+
 /**
  * Article-code key: "rmc-c30" and "RMC C30" both become "RMCC30".
  * @param {unknown} text

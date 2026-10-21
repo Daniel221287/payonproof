@@ -12,7 +12,7 @@ import { canonicalJson, sha256Hex } from './canonical.mjs';
 import { OfflineParseError, parseOffline } from './offline-parser.mjs';
 import { DOCUMENT_TYPES, validateExtraction } from './schema.mjs';
 
-export const PROMPT_VERSION = 'extract-v1';
+export const PROMPT_VERSION = 'extract-v2';
 
 const COMMON_RULES = [
   'You extract data from ONE construction document into JSON for an accounts-payable check.',
@@ -47,8 +47,8 @@ const SHAPES = {
 }`,
   timesheet: `{
   "sheetRef": string | null (timesheet number),
-  "siteManager": string | null,
-  "entries": [ { "ref": string | null (row number, counting from 1), "worker": string (as printed), "role": string | null, "date": "YYYY-MM-DD", "hours": number, "signed": boolean (true only if the row shows the site manager's signature or sign-off; "not signed", "nicht unterschrieben", "brak podpisu", empty or missing sign-off means false), "signedBy": string | null } ]
+  "siteManager": string | null (name of the main contractor's site manager printed on the sheet, e.g. after "Site manager", "Bauleitung" or "Kierownik budowy"),
+  "entries": [ { "ref": string | null (row number, counting from 1), "worker": string (as printed), "role": string | null (trade as printed in that row), "date": "YYYY-MM-DD", "hours": number, "signed": boolean (true if the row shows a signature or sign-off by anyone; "not signed", "nicht unterschrieben", "brak podpisu", empty or missing sign-off means false), "signedBy": string | null (the name written in that row's sign-off, exactly as printed, whoever it is; null if no name is written) } ]
 }`,
   delivery_notes: `{
   "notes": [ { "ref": string (delivery note number), "item": string (as printed), "itemCode": string | null (article code), "quantity": number, "unit": string (as printed), "date": "YYYY-MM-DD", "receivedBy": string | null } ]

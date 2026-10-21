@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { signerMatches } from '../src/normalize.mjs';
 import { verifyCase } from '../src/verify.mjs';
 
 const RATES = [
@@ -20,17 +21,17 @@ function concrete(id, date, qty, totalCents = qty * 12800, extra = {}) {
     quantityMilli: qty * 1000, unit: 'm3', unitAsWritten: 'm3', unitPriceCents: 12800, lineTotalCents: totalCents, ...extra,
   };
 }
-function entry(worker, date, hours, signed = true) {
-  return { ref: null, worker, role: null, date, hoursMilli: Math.round(hours * 1000), signed, signedBy: signed ? 'K. Vogelsang' : null };
+function entry(worker, date, hours, signed = true, extra = {}) {
+  return { ref: null, worker, role: null, date, hoursMilli: Math.round(hours * 1000), signed, signedBy: signed ? 'K. Vogelsang' : null, ...extra };
 }
 function note(ref, date, qty, extra = {}) {
   return { ref, item: 'Ready-mix concrete C30/37', itemCode: 'RMC-C30', quantityMilli: qty * 1000, unit: 'm3', unitAsWritten: 'm3', date, receivedBy: null, ...extra };
 }
-function run({ lines, entries = [], notes = [], cap = null, invoice = {}, contract = {} }) {
+function run({ lines, entries = [], notes = [], cap = null, invoice = {}, contract = {}, sheet = {} }) {
   return verifyCase({
     contract: { contractId: 'SC-1', subcontractor: 'Crew', payeeEmail: 'crew@example.com', currency: 'EUR', language: 'en', paymentCapCents: cap, rates: RATES, ...contract },
     invoice: { invoiceNumber: 'INV-1', issuer: 'Crew', issueDate: null, contractRef: 'SC-1', currency: 'EUR', payeeEmail: null, totalCents: null, lines, ...invoice },
-    timesheets: [{ docId: 'ts', sheetRef: 'TS', entries }],
+    timesheets: [{ docId: 'ts', sheetRef: 'TS', siteManager: 'Katrin Vogelsang', entries, ...sheet }],
     deliveryNotes: [{ docId: 'dn', notes }],
   });
 }
@@ -203,4 +204,61 @@ test('case findings: currency mismatch blocks, payee and total mismatches warn',
   const codes = result.caseFindings.map((finding) => finding.code);
   assert.deepEqual(codes.sort(), ['CURRENCY_MISMATCH', 'INVOICE_TOTAL_MISMATCH', 'PAYEE_MISMATCH']);
   assert.deepEqual(result.blockers.map((b) => b.code), ['CURRENCY_MISMATCH']);
+});
+
+test('UNSIGNED: a sign-off by anyone but the site manager named on the sheet proves nothing', () => {
+  const result = run({
+    lines: [{ ...labour('1', 'Tomasz Brzezina', '2026-09-14', 8, 3950, 31600), role: 'Formwork carpenter' }],
+    entries: [entry('Brzezina, Tomasz', '2026-09-14', 8, true, { signedBy: 'T. Brzezina' })],
+  });
+  const line = byId(result, '1');
+  assert.equal(line.verdict, 'UNSIGNED');
+  assert.equal(line.payableCents, 0);
+  assert.match(line.reason, /TS#1 for Tomasz Brzezina on 2026-09-14 is signed by T\. Brzezina, not by the site manager Katrin Vogelsang\./);
+  assert.equal(line.findings[0].params.signedBy, 'T. Brzezina');
+  assert.deepEqual(result.unusedEvidence, [], 'a wrongly signed entry is not usable evidence either');
+});
+
+test('signers match the site manager by surname, diacritics folded, with consistent initials', () => {
+  for (const name of ['K. Vogelsang', 'Katrin Vogelsang', 'Vogelsang K.', 'Vogelsang, Katrin', 'K.Vogelsang', 'Vogelsang']) {
+    assert.equal(signerMatches(name, 'Katrin Vogelsang'), true, name);
+  }
+  for (const name of ['T. Brzezina', 'T. Vogelsang', 'K.V.', 'Katrin', 'Kathrin Vogelsang', '']) {
+    assert.equal(signerMatches(name, 'Katrin Vogelsang'), false, name);
+  }
+  assert.equal(signerMatches('P. Grzybowiec', 'Paweł Grzybowiec'), true);
+  assert.equal(signerMatches('Łukasz Żółć', 'Lukasz Zolc'), true);
+  const result = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { signedBy: 'T. Vogelsang' })],
+  });
+  assert.equal(byId(result, '1').verdict, 'UNSIGNED', 'same surname, different initial');
+});
+
+test('signed hours split between the site manager and someone else: only the manager\'s hours are paid', () => {
+  const result = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 5), entry('Kordecki, Adam', '2026-09-14', 4, true, { signedBy: 'A. Kordecki' })],
+  });
+  const line = byId(result, '1');
+  assert.equal(line.verdict, 'PARTIAL');
+  assert.equal(line.provenQtyMilli, 5000);
+  assert.match(line.reason, /4 h are not signed by the site manager/);
+});
+
+test('a sheet that names no site manager keeps counting signed entries, with a warning', () => {
+  const result = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { signedBy: 'Somebody' })],
+    sheet: { siteManager: null },
+  });
+  assert.equal(byId(result, '1').verdict, 'PROVEN');
+  assert.deepEqual(result.caseFindings.map((f) => [f.code, f.severity]), [['SIGNER_NOT_CHECKED', 'warning']]);
+  assert.match(result.caseFindings[0].reason, /Timesheet TS does not name the site manager, so the signer of its 1 signed entry could not be checked/);
+  const unnamed = run({
+    lines: [labour('1', 'Adam Kordecki', '2026-09-14', 9)],
+    entries: [entry('Kordecki, Adam', '2026-09-14', 9, true, { signedBy: null })],
+  });
+  assert.equal(byId(unnamed, '1').verdict, 'PROVEN');
+  assert.match(unnamed.caseFindings[0].reason, /1 signed entry has no signer name, so the signer could not be compared with the site manager Katrin Vogelsang/);
 });
