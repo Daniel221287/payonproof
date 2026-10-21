@@ -159,14 +159,14 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 
 ### Measured on the four bundled cases
 
-Live runs on 21 October 2026 against Token Factory, `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`, PayPal MOCK. "Reference" is the deterministic offline parser on the same documents. Each case is analysed through the HTTP API, one after another; `npm run live-check` repeats this with your own key.
+Live runs on 21–22 October 2026 against Token Factory, `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B`, PayPal MOCK. "Reference" is the deterministic offline parser on the same documents. Each case is analysed through the HTTP API, one after another; `npm run live-check` repeats this with your own key.
 
 | Setup | Documents read | Verdicts and totals = reference | AI message used | Time per case |
 | --- | --- | --- | --- | --- |
 | Reasoning on, JSON mode (prompt `extract-v1`) | 16/16 | 4/4 | 4/4 | 42–88 s |
 | Reasoning off, JSON mode (`extract-v2`) | 14/16; 2 cases fell back to the offline parser | 4/4, 2 of them only through the fallback | 2/4 | 9–18 s |
 | Reasoning off, JSON Schema (`extract-v3`, the default), `npm run live-check -- --runs 3` | 48/48 | 12/12 | 11/12, 2 of them on the second attempt; 1 template | 3.4–6.4 s |
-| Reasoning on, JSON Schema (`extract-v3`, `NEBIUS_REASONING=on`) | 16/16 | 4/4 | 4/4 | 11–26 s |
+| Reasoning on, JSON Schema (`extract-v3`, `NEBIUS_REASONING=on`, `max_tokens` 16384), `--runs 2` | 32/32 | 8/8 | 8/8, 2 of them on the second attempt | 15–78 s |
 
 ### Failure cases we hit, and what changed
 
@@ -175,8 +175,9 @@ Live runs on 21 October 2026 against Token Factory, `nvidia/NVIDIA-Nemotron-3-Na
 3. **An article code left in the item name.** Every run returned `Ready-mix concrete C30/37 (RMC-C30)` as the item with no item code, so both material lines of the overbilled sample lost their contract rate. Now a missing code printed in brackets after the item is read as the code, with a warning, and the item name without it is tried last.
 4. **Message drafts that failed the fact check** (an amount written in another format, line numbers grouped as "lines 1, 2 and 5"). The template was used. Now a failed draft is asked for once more, told what was missing, and checked again.
 5. **A draft in the wrong language.** One draft for the Ukrainian crew came back in Russian and named internal data fields. The fact check refused it only because a total was missing, so it now also checks the language (script and common words), and the prompt asks for the agreed language only and no field names.
+6. **An answer cut off while reasoning.** With reasoning on, the rate-drift invoice hit the endpoint's default output limit (`finish_reason: length`): the reasoning counts toward the output. The sample fell back to the offline parser. Now `max_tokens` is 16384 when reasoning is on.
 
-Each of these went the safe way: lines were held or paid less, or the template was used, and the page said why. Answers still vary between runs at temperature 0 (case 2 came and went), which is why every figure is recomputed, every reading is validated and a person approves the exact payment.
+Each of these went the safe way: lines were held or paid less, or the template was used, and the page said why. Answers still vary between runs at temperature 0 (case 2 came and went), and reasoning makes a case slower and less predictable (15–78 s), which is why every figure is recomputed, every reading is validated and a person approves the exact payment.
 
 ## Agentic commerce over MCP
 
