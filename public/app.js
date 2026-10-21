@@ -371,7 +371,9 @@
     const doc = c.documents.find((candidate) => candidate.id === state.docId);
     $('#doc-text').textContent = doc?.text ?? '';
     viewer.querySelector('.doc-issues')?.remove();
-    const issues = [...(doc?.errors ?? []).map((e) => `Error at ${e.path}: ${e.message}`), ...(doc?.warnings ?? []).map((w) => `Note at ${w.path}: ${w.message}`)];
+    const where = (issue) => String(issue.path ?? '').replace(/^\$\.?/, '');
+    const describe = (label, issue) => (where(issue) ? `${label} at ${where(issue)}: ${issue.message}` : `${label}: ${issue.message}`);
+    const issues = [...(doc?.errors ?? []).map((e) => describe('Error', e)), ...(doc?.warnings ?? []).map((w) => describe('Note', w))];
     if (issues.length) viewer.append(h('ul', { class: 'doc-issues' }, issues.map((text) => h('li', { text }))));
   }
 
@@ -391,8 +393,13 @@
       cell('Read by', c.extraction.label, `${c.extraction.durationMs} ms${c.extraction.cached ? ', cached result' : ''}, input SHA-256 ${c.extraction.inputSha256.slice(0, 12)}…`),
     );
 
+    const unreadable = c.unreadable ?? [];
+    $('#cannot-verify').hidden = unreadable.length === 0;
+    $('#cannot-verify-list').replaceChildren(...unreadable.map((doc) => h('li', {}, h('strong', { text: doc.name }), ` could not be read (${doc.reason}).`)));
+
     const findings = $('#case-findings');
-    findings.replaceChildren(...(v?.caseFindings ?? c.blockers ?? []).map((finding) => h('li', { 'data-severity': finding.severity },
+    const shown = (v?.caseFindings ?? c.blockers ?? []).filter((finding) => !(unreadable.length && finding.code === 'DOCUMENT_REJECTED'));
+    findings.replaceChildren(...shown.map((finding) => h('li', { 'data-severity': finding.severity },
       h('span', { class: 'finding-label', text: finding.severity === 'blocker' ? 'Blocked' : 'Warning' }),
       h('span', { text: finding.reason }))));
 
@@ -901,8 +908,8 @@
     const paid = c?.payout?.state === 'PAID_VERIFIED';
     const steps = {
       documents: c ? 'done' : 'current',
-      proof: c ? 'done' : 'todo',
-      approve: c ? (approvalIsLive() || sent ? 'done' : 'current') : 'todo',
+      proof: c?.verification ? 'done' : (c ? 'current' : 'todo'),
+      approve: c?.proposal ? (approvalIsLive() || sent ? 'done' : 'current') : 'todo',
       pay: paid ? 'done' : (approvalIsLive() || sent ? 'current' : 'todo'),
     };
     for (const li of document.querySelectorAll('.progress li')) {

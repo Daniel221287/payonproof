@@ -99,8 +99,13 @@ async function extractOne(doc, provider, clock) {
     }
   } catch (error) {
     if (error instanceof OfflineParseError || error instanceof AiError) {
+      // Say when a document was refused because offline mode reads only the sample layout.
+      const message = error instanceof OfflineParseError && !/offline sample parser/i.test(error.message)
+        ? `${error.message.replace(/\.+$/, '')}. The offline sample parser reads only the layout of the bundled samples.`
+        : error.message;
       return {
-        ...base, status: 'rejected', errors: [{ path: '$', message: error.message }], warnings: [], data: null,
+        ...base, status: 'rejected', errors: [{ path: '$', message }], warnings: [], data: null,
+        errorCode: error instanceof AiError ? error.code : 'OFFLINE_PARSE', errorStatus: error.status ?? null,
         durationMs: Math.round(clock() - started), usage,
       };
     }
@@ -173,6 +178,21 @@ export async function extractDocuments(documents, { provider, cache, clock = () 
 }
 
 /**
+ * Validation issues as one readable phrase: no JSON path when the issue concerns the whole document,
+ * no trailing period (callers end the sentence).
+ * @param {Array<{path: string, message: string}>} issues
+ * @param {number} [max]
+ * @returns {string}
+ */
+export function describeIssues(issues, max = 3) {
+  return issues.slice(0, max).map((issue) => {
+    const message = String(issue.message ?? '').trim().replace(/\.+$/, '');
+    const where = String(issue.path ?? '').replace(/^\$\.?/, '');
+    return where ? `${where} ${message}` : message;
+  }).join('; ');
+}
+
+/**
  * Turn extracted documents into the verification engine's input, collecting blockers.
  * @param {Awaited<ReturnType<typeof extractDocuments>>} extraction
  */
@@ -180,7 +200,7 @@ export function assembleCaseInput(extraction) {
   const blockers = [];
   for (const doc of extraction.documents) {
     if (doc.status !== 'ok') {
-      blockers.push({ code: 'DOCUMENT_REJECTED', severity: 'blocker', reason: `"${doc.name}" could not be read reliably: ${doc.errors.slice(0, 3).map((e) => `${e.path} ${e.message}`).join('; ')}.` });
+      blockers.push({ code: 'DOCUMENT_REJECTED', severity: 'blocker', document: doc.id, reason: `"${doc.name}" could not be read: ${describeIssues(doc.errors)}.` });
     }
   }
   const ok = extraction.documents.filter((doc) => doc.status === 'ok');

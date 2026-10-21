@@ -67,6 +67,7 @@ function summarizeCase(caseView) {
     })),
     warnings: (verification?.caseFindings ?? []).filter((finding) => finding.severity === 'warning').map((finding) => finding.reason),
     blockers: caseView.blockers.map((blocker) => blocker.reason),
+    unreadable: caseView.unreadable ?? [],
   };
 }
 
@@ -102,7 +103,10 @@ export function createMcpServer({ service, approvalUrlFor }) {
     if ((sampleId === undefined) === (documents === undefined)) return failure('BAD_REQUEST', 'Give exactly one of sampleId or documents.');
     try {
       const caseView = await service.analyze({ sampleId, documents });
-      return result({ ...summarizeCase(caseView), nextStep: 'Call payonproof_propose_payment with this caseId.' });
+      const nextStep = caseView.unreadable?.length
+        ? 'Cannot verify: at least one document could not be read (see unreadable). Nothing was checked and nothing can be paid; send readable documents again.'
+        : 'Call payonproof_propose_payment with this caseId.';
+      return result({ ...summarizeCase(caseView), nextStep });
     } catch (error) {
       return errorResult(error);
     }

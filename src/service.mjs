@@ -14,7 +14,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { AiError } from './ai.mjs';
 import { ApprovalError } from './approval.mjs';
 import { hashCanonical } from './canonical.mjs';
-import { assembleCaseInput, createExtractionCache, extractDocuments } from './extract.mjs';
+import { assembleCaseInput, createExtractionCache, describeIssues, extractDocuments } from './extract.mjs';
 import { buildMessageFacts, draftMessage, LANGUAGE_NAMES } from './message.mjs';
 import { centsToDecimalString } from './money.mjs';
 import { buildPayoutBody, senderBatchIdFromPreviewHash } from './paypal.mjs';
@@ -247,6 +247,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         payeeEmail: invoice.payeeEmail,
         totalCents: invoice.totalCents,
       },
+      unreadable: record.unreadable,
       verification: record.verification,
       blockers: record.blockers,
       message: record.message,
@@ -373,6 +374,11 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       }
       const extraction = await extractDocuments(docs, { provider, cache, now });
       const { input, blockers } = assembleCaseInput(extraction);
+      // A document that could not be read is missing evidence of unknown content: nothing is verified,
+      // so no verdict, payable figure or message is built from it.
+      const unreadable = extraction.documents
+        .filter((doc) => doc.status !== 'ok')
+        .map((doc) => ({ id: doc.id, name: doc.name, type: doc.type, reason: describeIssues(doc.errors) }));
       const record = {
         id: `case_${randomBytes(8).toString('hex')}`,
         version: 1,
@@ -382,6 +388,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         documents: docs,
         extraction,
         input,
+        unreadable,
         verification: null,
         blockers,
         message: null,
@@ -389,7 +396,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         payout: null,
         history: [{ at: iso(), event: 'ANALYZED' }],
       };
-      if (input) {
+      if (input && unreadable.length === 0) {
         const verification = verifyCase(input);
         verification.blockers = [...blockers, ...verification.blockers];
         verification.caseFindings = [...blockers, ...verification.caseFindings];

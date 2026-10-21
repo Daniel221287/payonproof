@@ -216,3 +216,20 @@ test('MCP: an optional bearer token protects the endpoint', async () => {
   assert.equal(denied.status, 401);
   assert.equal(allowed.status, 200);
 });
+
+test('MCP: an unreadable document gives "cannot verify" and nothing to propose', async () => {
+  const client = await mcpClient();
+  const { samples } = await (await fetch(`${base}/api/cases`)).json();
+  const documents = samples.find((sample) => sample.id === 'honest').documents.map((doc) => ({
+    type: doc.type, name: doc.name, text: doc.type === 'timesheet' ? doc.text.replace('| 8.00  | signed K. Vogelsang', '| 8.00  | OK J.A.') : doc.text,
+  }));
+  const verified = await client.callTool({ name: 'payonproof_verify_case', arguments: { documents } });
+  const { caseId, totals, lines, unreadable, nextStep } = verified.structuredContent;
+  assert.equal(totals, null);
+  assert.deepEqual(lines, []);
+  assert.equal(unreadable[0].name, 'Timesheet TS-BM-38');
+  assert.match(nextStep, /^Cannot verify/);
+  const proposal = await client.callTool({ name: 'payonproof_propose_payment', arguments: { caseId } });
+  assert.equal(proposal.structuredContent.error.code, 'NOT_PAYABLE');
+  await client.close();
+});

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { AiError } from '../src/ai.mjs';
-import { assembleCaseInput, buildExtractionPrompt, createExtractionCache, documentsSha256, extractDocuments } from '../src/extract.mjs';
+import { assembleCaseInput, buildExtractionPrompt, createExtractionCache, describeIssues, documentsSha256, extractDocuments } from '../src/extract.mjs';
 import { verifyCase } from '../src/verify.mjs';
 
 const DOCS = [
@@ -118,4 +118,12 @@ test('a case needs exactly one contract and one invoice', async () => {
   assert.equal(input, null);
   assert.deepEqual(blockers.map((b) => b.code), ['CONTRACT_COUNT']);
   await assert.rejects(extractDocuments([{ id: 'x', name: 'x', type: 'photo', text: 'x' }], { provider: fakeProvider() }), TypeError);
+});
+
+test('reasons for an unreadable document read as plain sentences: no "$" path, one final period', () => {
+  assert.equal(describeIssues([{ path: '$', message: 'The AI endpoint could not be reached (ECONNREFUSED).' }]), 'The AI endpoint could not be reached (ECONNREFUSED)');
+  assert.equal(describeIssues([{ path: '$.entries[0].hours', message: 'negative values are not allowed' }, { path: '$.sheetRef', message: 'must be text' }]),
+    'entries[0].hours negative values are not allowed; sheetRef must be text');
+  const blockers = assembleCaseInput({ documents: [{ id: 'i', name: 'Invoice', type: 'invoice', status: 'rejected', errors: [{ path: '$', message: 'The model did not return valid JSON.' }] }] }).blockers;
+  assert.equal(blockers[0].reason, '"Invoice" could not be read: The model did not return valid JSON.');
 });

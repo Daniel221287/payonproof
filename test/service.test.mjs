@@ -202,3 +202,27 @@ test('AI budgets: hourly and daily caps stop model calls before they are sent', 
   await analyze(5);
   assert.equal(calls, 7, 'a new 24-hour window allows calls again');
 });
+
+function honestDocuments(edit = {}) {
+  const sample = samples.find((candidate) => candidate.id === 'honest');
+  return sample.documents.map((doc) => ({ type: doc.type, name: doc.name, text: edit[doc.type] ? edit[doc.type](doc.text) : doc.text }));
+}
+
+test('an unreadable document means "cannot verify": no verdicts, no payable figure, no message, nothing to approve', async () => {
+  const { service } = setup();
+  const caseView = await service.analyze({ documents: honestDocuments({ timesheet: (text) => text.replace('| 8.00  | signed K. Vogelsang', '| 8.00  | OK J.A.') }) });
+  assert.deepEqual(caseView.unreadable.map((doc) => doc.name), ['Timesheet TS-BM-38']);
+  assert.match(caseView.unreadable[0].reason, /^Cannot read the sign-off "OK J\.A\."\. The offline sample parser reads only the layout of the bundled samples$/);
+  assert.equal(caseView.verification, null, 'no line is judged on missing evidence');
+  assert.equal(caseView.message, null, 'no message is built from missing evidence');
+  assert.equal(caseView.proposal, null);
+  assert.equal(caseView.blockers[0].code, 'DOCUMENT_REJECTED');
+  assert.equal(caseView.blockers[0].reason, '"Timesheet TS-BM-38" could not be read: Cannot read the sign-off "OK J.A.". The offline sample parser reads only the layout of the bundled samples.');
+  assert.doesNotMatch(caseView.blockers[0].reason, /\$|\.\./, 'no JSON path, no double period');
+  assert.equal(caseView.invoice.invoiceNumber, 'BM-2026-118', 'what was read is still shown');
+  assert.throws(() => service.approve(caseView.id, { previewHash: 'a'.repeat(64), confirm: true }), (e) => e.code === 'NOT_PAYABLE');
+  assert.throws(() => service.updateMessage(caseView.id, 'Paying in full.'), (e) => e.code === 'NOT_PAYABLE');
+  const readable = await service.analyze({ documents: honestDocuments() });
+  assert.deepEqual(readable.unreadable, []);
+  assert.equal(readable.verification.totals.payableCents, 227063);
+});
