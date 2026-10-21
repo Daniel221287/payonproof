@@ -201,8 +201,10 @@
           </label>
           <div class="passcode" id="passcode-row" hidden>
             <label for="passcode">Approver passcode</label>
-            <input type="password" id="passcode" autocomplete="off">
+            <input type="password" id="passcode" autocomplete="off" aria-describedby="passcode-hint">
+            <small class="passcode-hint" id="passcode-hint">Only the approving person has it. Five wrong passcodes lock approvals for everyone for 15 minutes.</small>
           </div>
+          <p class="note" id="passcode-note" hidden>No approver passcode is set. That is allowed only while the server listens on 127.0.0.1, and then any program on this computer that can send HTTP to it could approve.</p>
           <button type="button" class="button-sign" id="approve-btn" disabled>
             <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 15.5c2.5-1 3.8-4 5.4-4.1 1.4 0 .7 3 2.2 3.1 1.3 0 2-2.1 3-2.1.8 0 1 1 1.9 1.2"/><path d="M3 18h14"/></svg>
             Approve exactly this payment
@@ -229,7 +231,7 @@
 
   <footer class="footer">
     <p>PayOnProof is open source under the MIT licence. It pays through the PayPal sandbox only; no real money moves.</p>
-    <p>Agents can use it over MCP at <code>/mcp</code>. They can verify and propose, but only a person can approve.</p>
+    <p id="footer-agents">Agents can use it over MCP at <code>/mcp</code>. They can verify and propose; no MCP tool can approve.</p>
   </footer>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

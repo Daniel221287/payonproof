@@ -10,7 +10,7 @@
  *    sender_batch_id, which PayPal processes at most once.
  *  - "Paid" is only ever claimed from PayPal's readback.
  */
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { AiError } from './ai.mjs';
 import { ApprovalError } from './approval.mjs';
 import { hashCanonical } from './canonical.mjs';
@@ -24,6 +24,12 @@ import { DOCUMENT_TYPES } from './schema.mjs';
 import { verifyCase } from './verify.mjs';
 
 export const LIMITS = Object.freeze({ maxDocuments: 12, maxDocumentChars: 60_000, maxMessageChars: 4_000, maxCases: 500 });
+
+/**
+ * Approver passcode lockout. It is global, not per client: after 5 wrong passcodes within 15 minutes
+ * approvals are refused for everyone for 15 minutes, so changing IP addresses gains an attacker nothing.
+ */
+export const PASSCODE_LOCKOUT = Object.freeze({ maxFailures: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
 
 export class ServiceError extends Error {
   /**
@@ -43,10 +49,10 @@ export class ServiceError extends Error {
 
 const ascii = (text) => String(text).normalize('NFKD').replace(/[^\x20-\x7e]/g, '');
 
+/** Constant-time comparison; hashing first means not even the length of the secret leaks. */
 function sameSecret(given, expected) {
-  const a = Buffer.from(String(given ?? ''));
-  const b = Buffer.from(String(expected));
-  return a.length === b.length && timingSafeEqual(a, b);
+  const digest = (value) => createHash('sha256').update(String(value ?? '')).digest();
+  return timingSafeEqual(digest(given), digest(expected));
 }
 
 /**
@@ -84,6 +90,39 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
 
   const paypalEnvironment = config.paypal.mode === 'mock' ? 'mock' : config.paypal.environment;
   const iso = () => new Date(now()).toISOString();
+
+  /** Times of recent wrong approver passcodes (all clients together) and the end of the current lock. */
+  const passcodeFailures = [];
+  let approvalsLockedUntil = 0;
+
+  function lockedError() {
+    const until = new Date(approvalsLockedUntil).toISOString().slice(11, 16);
+    return new ServiceError(429, 'APPROVALS_LOCKED',
+      `Approvals are locked for everyone until ${until} UTC after ${PASSCODE_LOCKOUT.maxFailures} wrong approver passcodes within ${PASSCODE_LOCKOUT.windowMs / 60_000} minutes.`,
+      { retryAfterSeconds: Math.max(1, Math.ceil((approvalsLockedUntil - now()) / 1000)) });
+  }
+
+  /** Throws unless the approver passcode is right; counts wrong guesses toward the global lockout. */
+  function checkPasscode(passcode) {
+    if (!config.approverPasscode) return;
+    if (typeof passcode !== 'string' || passcode === '') {
+      throw new ServiceError(403, 'PASSCODE_REQUIRED', 'Enter the approver passcode to approve this payment.');
+    }
+    if (sameSecret(passcode, config.approverPasscode)) return;
+    const cutoff = now() - PASSCODE_LOCKOUT.windowMs;
+    while (passcodeFailures.length && passcodeFailures[0] <= cutoff) passcodeFailures.shift();
+    passcodeFailures.push(now());
+    log({ event: 'approval.passcode_wrong', recentFailures: passcodeFailures.length });
+    if (passcodeFailures.length >= PASSCODE_LOCKOUT.maxFailures) {
+      passcodeFailures.length = 0;
+      approvalsLockedUntil = now() + PASSCODE_LOCKOUT.lockMs;
+      log({ event: 'approval.locked', until: new Date(approvalsLockedUntil).toISOString() });
+      throw lockedError();
+    }
+    const left = PASSCODE_LOCKOUT.maxFailures - passcodeFailures.length;
+    throw new ServiceError(403, 'PASSCODE_INVALID',
+      `The approver passcode is not correct. ${left} more wrong ${left === 1 ? 'attempt locks' : 'attempts lock'} approvals for everyone for ${PASSCODE_LOCKOUT.lockMs / 60_000} minutes.`);
+  }
 
   function requireCase(caseId) {
     const record = typeof caseId === 'string' ? cases.get(caseId) : undefined;
@@ -393,11 +432,13 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
     },
 
     /**
-     * Human approval (HTTP UI only; no MCP tool calls this).
+     * Human approval (HTTP UI only; no MCP tool calls this, and MCP never accepts a passcode).
+     * With APPROVER_PASSCODE set, the passcode is what makes this a person's approval.
      * @param {string} caseId
      * @param {{previewHash: string, confirm: boolean, passcode?: string}} request
      */
     approve(caseId, { previewHash, confirm, passcode } = {}) {
+      if (now() < approvalsLockedUntil) throw lockedError();
       const record = requireCase(caseId);
       if (record.payout && !['NOT_SENT', 'REJECTED'].includes(record.payout.state)) {
         throw new ServiceError(409, 'ALREADY_PAID', 'This case was already sent to PayPal.');
@@ -410,9 +451,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (previewHash !== record.proposal.previewHash) {
         throw new ServiceError(409, 'PREVIEW_CHANGED', 'The payment changed since it was shown. Review the new preview and approve again.', { previewHash: record.proposal.previewHash });
       }
-      if (config.approverPasscode && !sameSecret(passcode, config.approverPasscode)) {
-        throw new ServiceError(403, 'PASSCODE_INVALID', 'The approver passcode is not correct.');
-      }
+      checkPasscode(passcode);
       const approval = approvals.issue({ caseId, previewHash });
       record.history.push({ at: iso(), event: 'APPROVED', previewHash });
       return { approval, case: view(record) };

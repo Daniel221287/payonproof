@@ -1,10 +1,11 @@
 /**
  * MCP server for agentic commerce, served over Streamable HTTP at /mcp.
  *
- * Tools let an AI agent verify a case, propose a payment and pay it, but the
- * agent can never approve: payonproof_pay_approved needs a single-use approval
- * token that only the human UI issues, bound to the exact previewHash.
- * There is deliberately no approval tool.
+ * Tools let an AI agent verify a case, propose a payment and pay it, but no
+ * tool can approve: payonproof_pay_approved needs a single-use approval token,
+ * bound to the exact previewHash, that the approval page issues. There is
+ * deliberately no approval tool and no tool accepts the approver passcode,
+ * which is what makes an approval a person's approval on a reachable server.
  */
 import { readFileSync } from 'node:fs';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -24,7 +25,8 @@ export const TOOL_NAMES = Object.freeze(['payonproof_verify_case', 'payonproof_p
 const INSTRUCTIONS = [
   'PayOnProof pays construction subcontractors only for invoice lines proven by signed timesheets and delivery notes.',
   'Flow: payonproof_verify_case -> payonproof_propose_payment -> a HUMAN opens approvalUrl and approves the exact payment -> payonproof_pay_approved with the approval token the human gives you -> payonproof_payout_status.',
-  'You cannot approve payments. Never ask for or guess approval tokens; ask the human to approve in the PayOnProof page.',
+  'No tool can approve a payment and no tool accepts the approver passcode. The person approves in the PayOnProof page, entering the approver passcode when the server has one, and gives you a single-use approval token.',
+  'Never ask for, guess or use the approver passcode, and never call the approval endpoint yourself; ask the human to approve in the page.',
 ].join('\n');
 
 function result(payload) {

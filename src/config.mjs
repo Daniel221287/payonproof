@@ -14,6 +14,28 @@ export class ConfigError extends Error {
 
 const EMAIL = /^[^\s@<>()",;:]{1,64}@[^\s@<>()",;:]{1,255}\.[a-z]{2,24}$/i;
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/** Shortest approver passcode accepted on a server that is reachable beyond this computer. */
+export const MIN_PASSCODE_LENGTH = 8;
+
+/**
+ * Why the server can be reached from beyond this computer (empty when it is loopback-only).
+ * @param {Record<string, string|undefined>} env
+ * @param {Set<string>} allowedHosts
+ * @param {string|null} publicBaseUrl
+ * @returns {string[]}
+ */
+function exposureReasons(env, allowedHosts, publicBaseUrl) {
+  const reasons = [];
+  if (env.PORT !== undefined && env.PORT !== '') reasons.push('PORT is set, so it listens on 0.0.0.0');
+  if (env.RENDER) reasons.push('it runs on Render');
+  const extra = [...allowedHosts].filter((host) => !LOOPBACK_HOSTS.has(host));
+  if (extra.length) reasons.push(`ALLOWED_HOSTS or RENDER_EXTERNAL_HOSTNAME admits ${extra.join(', ')}`);
+  if (publicBaseUrl && !LOOPBACK_HOSTS.has(new URL(publicBaseUrl).hostname)) reasons.push(`PUBLIC_BASE_URL is ${publicBaseUrl}`);
+  return reasons;
+}
+
 /**
  * @param {Record<string, string|undefined>} env
  * @param {string[]} [argv] command-line flags; `--mock-paypal` forces PAYPAL_MOCK=1
@@ -52,15 +74,26 @@ export function resolveConfig(env, argv = []) {
     }
   }
 
+  // The approver passcode is the approval boundary. The Origin check on /api/approve only stops other
+  // websites; any program that can send HTTP can set an Origin header. So a server that other machines
+  // can reach must have a passcode only the approving person knows.
+  const approverPasscode = effective.APPROVER_PASSCODE ? String(effective.APPROVER_PASSCODE) : null;
+  const exposure = exposureReasons(effective, allowedHosts, publicBaseUrl);
+  if (exposure.length > 0 && (!approverPasscode || approverPasscode.length < MIN_PASSCODE_LENGTH)) {
+    throw new ConfigError(`APPROVER_PASSCODE ${approverPasscode ? 'is too short' : 'is missing'}: this server can be reached beyond this computer (${exposure.join('; ')}), `
+      + `so approving a payment must need a passcode of at least ${MIN_PASSCODE_LENGTH} characters. Set APPROVER_PASSCODE, or leave PORT, RENDER, ALLOWED_HOSTS and PUBLIC_BASE_URL empty to listen on 127.0.0.1 only.`);
+  }
+
   return {
     listen,
     ai,
     paypal,
     allowedHosts,
     publicBaseUrl,
+    exposed: exposure.length > 0,
     trustProxy: effective.TRUST_PROXY === '1' || Boolean(effective.RENDER),
     payeeOverride,
-    approverPasscode: effective.APPROVER_PASSCODE ? String(effective.APPROVER_PASSCODE) : null,
+    approverPasscode,
     mcpBearerToken: effective.MCP_BEARER_TOKEN ? String(effective.MCP_BEARER_TOKEN) : null,
     aiMaxCallsPerHour: Number(effective.AI_MAX_CALLS_PER_HOUR) > 0 ? Number(effective.AI_MAX_CALLS_PER_HOUR) : 200,
     aiMaxCallsPerDay: Number(effective.AI_MAX_CALLS_PER_DAY) > 0 ? Number(effective.AI_MAX_CALLS_PER_DAY) : null,

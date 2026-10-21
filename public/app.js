@@ -234,6 +234,10 @@
       ? `Paste or load plain text. ${config.ai.label} reads each document separately; the rules engine does the checking.`
       : 'Offline mode reads only the fixed layout of the sample documents. Start from a sample and change numbers to see the verdicts move. Configure Nebius Token Factory, Gemini or an OpenAI-compatible model to read any text.';
     $('#passcode-row').hidden = !config.approval.passcodeRequired;
+    $('#passcode-note').hidden = config.approval.passcodeRequired;
+    $('#footer-agents').replaceChildren('Agents can use it over MCP at ', h('code', { text: '/mcp' }), config.approval.passcodeRequired
+      ? '. They can verify, propose and pay a payment a person approved; approving needs the approver passcode, which no MCP tool accepts.'
+      : '. They can verify and propose; no MCP tool can approve. This server has no approver passcode, so any program that can send HTTP to it could approve: keep it on 127.0.0.1.');
     setButtonText($('#pay-btn'), config.paypal.environment === 'live' ? 'Pay with PayPal (LIVE)' : 'Pay with PayPal (sandbox)');
   }
 

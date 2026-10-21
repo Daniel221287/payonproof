@@ -156,7 +156,7 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 | `payonproof_pay_approved` | Pays only with a valid approval token from the person; without one it returns `HUMAN_APPROVAL_REQUIRED` |
 | `payonproof_payout_status` | Reads the payout back from PayPal and returns the receipt |
 
-There is no approval tool. An agent verifies and proposes, hands the person the `approvalUrl`, the person approves in the page and gives the agent the single-use token (**Copy token for an MCP agent**), and the agent pays. Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport Streamable HTTP, URL `http://127.0.0.1:4410/mcp`, connected through the Inspector's proxy). Set `MCP_BEARER_TOKEN` to require `Authorization: Bearer …` on `/mcp`.
+There is no approval tool, and no tool accepts the approver passcode. An agent verifies and proposes, hands the person the `approvalUrl`, the person approves in the page (with the approver passcode) and gives the agent the single-use token (**Copy token for an MCP agent**), and the agent pays. What keeps an agent from approving by itself is the passcode, not MCP: an agent that also has a plain HTTP tool could call `/api/approve` directly, so on a server without a passcode (allowed only on 127.0.0.1, see [Safety model](#safety-model)) it could approve. Try it with the MCP Inspector (`npx @modelcontextprotocol/inspector`, transport Streamable HTTP, URL `http://127.0.0.1:4410/mcp`, connected through the Inspector's proxy). Set `MCP_BEARER_TOKEN` to require `Authorization: Bearer …` on `/mcp`.
 
 ## HTTP API
 
@@ -168,20 +168,22 @@ There is no approval tool. An agent verifies and proposes, hands the person the 
 | `POST /api/analyze` | `{sampleId}` or `{documents: [{type, name, text}]}`: extract, verify, draft the message, build the proposal |
 | `GET /api/cases/:id` | A case as shown in the UI |
 | `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
-| `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode?}`: the human approval, same-origin page only |
+| `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 5 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`) |
 | `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back |
 | `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything) |
 | `POST /api/payout/:id/reconcile` | Resolve `UNKNOWN_AFTER_SEND` with the same `sender_batch_id` |
 | `POST /mcp` | MCP Streamable HTTP endpoint |
 
-State-changing requests must be JSON and, when they carry an `Origin`, come from the same origin; `/api/approve` requires it.
+State-changing requests must be JSON and, when they carry an `Origin`, come from the same origin; `/api/approve` requires it. That stops other websites from acting through a visitor's browser. It is not authentication: any program can send an `Origin` header.
 
 ## Safety model
 
 - Money logic is pure, deterministic and tested; the AI cannot change an amount or a verdict.
 - Evidence and claims come from different parties and are read separately.
 - The payee is taken from the contract, never from the invoice; a different address on the invoice raises a warning.
-- Approval is explicit, exact (hash-bound), single-use, short-lived and withdrawn by any change. It can only be given from the page: the endpoint requires a same-origin browser request, and `APPROVER_PASSCODE` can add a passcode.
+- Approval is explicit, exact (hash-bound), single-use, short-lived and withdrawn by any change.
+- **The approver passcode is the approval boundary.** Whenever the server can be reached beyond this computer (`PORT`, `RENDER`, a non-loopback `ALLOWED_HOSTS` or `PUBLIC_BASE_URL`), it refuses to start without an `APPROVER_PASSCODE` of at least 8 characters. Passcodes are compared in constant time. After 5 wrong passcodes within 15 minutes, approvals are refused for everyone for 15 minutes (`429 APPROVALS_LOCKED`); the lockout is global, so changing IP addresses does not help. MCP has no approval tool and never accepts the passcode. The `Origin` check only stops other websites.
+- **Without a passcode** (allowed only while the server listens on 127.0.0.1, as `npm run demo` does), anything that can send HTTP to 127.0.0.1 can approve: a script, or an agent with an HTTP tool. Set `APPROVER_PASSCODE` locally too if other programs on the computer are not trusted.
 - Three independent layers prevent double payment (see above); unknown outcomes are reconciled, never blindly retried.
 - Sandbox only; startup refuses unsafe PayPal settings.
 - HTTP hardening: strict Content-Security-Policy (scripts only from the same origin, no inline scripts; `<style>` elements need a per-request nonce, which the grid uses), Host allow-list against DNS rebinding, same-origin checks on state-changing requests, JSON-only bodies, 768 KB body limit, per-IP rate limits (behind a proxy the client address is the right-most `X-Forwarded-For` entry, the one the proxy appended; entries a client adds to the left are ignored), no `innerHTML` with data in the client.
@@ -219,7 +221,7 @@ Use NVIDIA Nemotron on Nebius Token Factory by adding `NEBIUS_API_KEY` (and opti
 
 1. Push the repository to GitHub.
 2. In Render: **New > Web Service**, connect the repository. Runtime **Node**, build command `npm ci`, start command `npm start`, instance type **Free**, health check path `/health`. (Or **New > Blueprint** with the included `render.yaml`.)
-3. Environment variables: `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), an AI key (`NEBIUS_API_KEY` or `GEMINI_API_KEY`), `AI_MAX_CALLS_PER_HOUR`, `AI_MAX_CALLS_PER_DAY`, `APPROVER_PASSCODE`, `MCP_BEARER_TOKEN`.
+3. Environment variables: `APPROVER_PASSCODE` (**required**, at least 8 characters; the server refuses to start on Render without it), `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYEE_EMAIL_OVERRIDE` (or `PAYPAL_MOCK=1` for a mock-only demo), an AI key (`NEBIUS_API_KEY` or `GEMINI_API_KEY`), `AI_MAX_CALLS_PER_HOUR`, `AI_MAX_CALLS_PER_DAY`, `MCP_BEARER_TOKEN`.
 4. Render sets `PORT` and `RENDER_EXTERNAL_HOSTNAME`; the server then listens on `0.0.0.0`, allows that host name and trusts the proxy headers (it takes the right-most `X-Forwarded-For` address, which Render's proxy appends). Add custom domains to `ALLOWED_HOSTS`.
 
 Free instances sleep when idle; cases, approvals and receipts live in memory and are gone after a restart.
@@ -260,7 +262,7 @@ docs/img/               screenshots (desktop 1280×800 and phone 390×844, light
 
 - Documents are plain text (paste or `.txt` upload). PDFs and photos would need an OCR or PDF-to-text step first.
 - Offline mode reads only the bundled sample layout; real documents need an AI provider. The AI adapters are tested against recorded response shapes; a live Gemini or sandbox run happens outside this repository's tests.
-- Cases, approvals and receipts are kept in memory on a single instance. A production system needs a database, user accounts and strong approver authentication (SSO or passkeys) instead of the optional passcode; in this demo anyone who can open the page can approve.
+- Cases, approvals and receipts are kept in memory on a single instance. A production system needs a database, user accounts and strong approver authentication (SSO or passkeys) instead of one shared passcode: here anyone who knows the passcode can approve, and without a passcode (127.0.0.1 only) any local program can. The global lockout means a stranger can block approvals for 15 minutes by sending wrong passcodes, but cannot approve.
 - Duplicate detection works within one invoice; the same invoice submitted again as a new case is not detected across cases.
 - Matching after normalisation is exact by design (no fuzzy matching). Roles and items in other languages need an alias or article code in the contract.
 - Amounts are net. VAT and reverse charge are out of scope. Only currencies with two decimals are accepted.

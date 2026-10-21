@@ -5,7 +5,8 @@
  * Serves the UI from public/ with a strict Content-Security-Policy (no inline
  * scripts; styles only from 'self' or with a per-request nonce for the grid),
  * the JSON API under /api, the MCP endpoint at /mcp and /health.
- * Host header allow-list, same-origin checks for state-changing requests,
+ * Host header allow-list, same-origin checks for state-changing requests
+ * (they stop other websites; the approver passcode is the approval boundary),
  * request size limits and a small per-IP rate limit protect it.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -115,10 +116,10 @@ function hostnameOf(hostHeader) {
   }
 }
 
+/** Constant-time comparison; hashing first means not even the length of the secret leaks. */
 function sameSecret(given, expected) {
-  const a = Buffer.from(String(given ?? ''));
-  const b = Buffer.from(String(expected));
-  return a.length === b.length && timingSafeEqual(a, b);
+  const digest = (value) => createHash('sha256').update(String(value ?? '')).digest();
+  return timingSafeEqual(digest(given), digest(expected));
 }
 
 async function readJsonBody(req) {
@@ -235,12 +236,17 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
     }
   }
 
+  /**
+   * Refuse cross-site requests. This stops other websites from acting through a visitor's browser.
+   * It is not authentication: any program can send whatever Origin header it likes. The approval
+   * boundary is the approver passcode (see config.mjs and service.approve).
+   */
   function requireSameOrigin(req, { originRequired }) {
     const site = req.headers['sec-fetch-site'];
     if (site && !['same-origin', 'none'].includes(site)) throw new HttpError(403, 'CROSS_SITE', 'Cross-site requests are not allowed.');
     const origin = req.headers.origin;
     if (!origin) {
-      if (originRequired) throw new HttpError(403, 'ORIGIN_REQUIRED', 'Approvals can only be given from the PayOnProof page.');
+      if (originRequired) throw new HttpError(403, 'ORIGIN_REQUIRED', 'Send approvals from the PayOnProof page: this endpoint needs a same-origin Origin header.');
       return;
     }
     let parsed;
@@ -423,7 +429,8 @@ export async function createApp({ env = process.env, argv = [], fetchImpl = glob
         return sendJson(req, res, 403, { error: { code: 'HUMAN_APPROVAL_REQUIRED', detail: error.code, message: error.message } });
       }
       if (error instanceof ServiceError) {
-        return sendJson(req, res, error.status, { error: { code: error.code, message: error.message, ...error.extra } });
+        const headers = error.extra?.retryAfterSeconds ? { 'retry-after': String(error.extra.retryAfterSeconds) } : {};
+        return sendJson(req, res, error.status, { error: { code: error.code, message: error.message, ...error.extra } }, headers);
       }
       log({ event: 'error', path: url.pathname, message: error?.message, stack: error?.stack?.split('\n').slice(0, 4).join(' | ') });
       return sendJson(req, res, 500, { error: { code: 'INTERNAL', message: 'Something went wrong on the server.' } });

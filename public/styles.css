@@ -442,6 +442,7 @@ button[aria-busy="true"]::after {
 .passcode { display: grid; gap: 6px; }
 .passcode label { font-weight: 650; }
 .passcode input { min-height: 40px; padding: 6px 10px; }
+.passcode-hint { color: var(--ink-2); font-size: 0.82rem; }
 .approval-state:empty { display: none; }
 .approval-state { display: grid; gap: 8px; padding: 12px; overflow-wrap: anywhere; border-left: 4px solid var(--signature); background: color-mix(in srgb, var(--signature) 8%, var(--sheet)); border-radius: 0 3px 3px 0; }
 .approval-state[data-state="withdrawn"] { border-left-color: var(--disputed); background: var(--disputed-wash); }
