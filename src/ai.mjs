@@ -62,12 +62,15 @@ export function resolveAiConfig(env) {
       throw new AiConfigError('NEBIUS_BASE_URL is not a valid URL.');
     }
     if (url.protocol !== 'https:') throw new AiConfigError('NEBIUS_BASE_URL must be https.');
+    const reasoning = (env.NEBIUS_REASONING || 'off').trim().toLowerCase();
+    if (!['on', 'off'].includes(reasoning)) throw new AiConfigError('NEBIUS_REASONING must be on or off.');
     return {
       provider,
       model,
       baseUrl: url.href.replace(/\/+$/, ''),
       apiKey: env.NEBIUS_API_KEY,
       jsonMode: env.AI_JSON_MODE !== '0',
+      reasoning,
       timeoutMs,
     };
   }
@@ -202,6 +205,9 @@ async function callOpenAi(fetchImpl, config, state, { system, user }) {
       temperature: 0,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      // Nemotron on Token Factory: answer without the hidden reasoning pass (about 2x faster, 3x fewer tokens).
+      ...(config.provider === 'nebius' && config.reasoning === 'off' && state.templateKwargs !== false
+        ? { chat_template_kwargs: { enable_thinking: false } } : {}),
     };
     const headers = { 'content-type': 'application/json' };
     if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
@@ -209,6 +215,10 @@ async function callOpenAi(fetchImpl, config, state, { system, user }) {
     return { response, ...(await readBody(response)) };
   };
   let result = await attempt(state.jsonMode);
+  if (!result.response.ok && result.response.status === 400 && state.templateKwargs !== false && /chat_template_kwargs|enable_thinking/i.test(result.text)) {
+    state.templateKwargs = false;
+    result = await attempt(state.jsonMode);
+  }
   if (!result.response.ok && state.jsonMode && result.response.status === 400 && /response_format|json_object|json mode/i.test(result.text)) {
     state.jsonMode = false;
     result = await attempt(false);

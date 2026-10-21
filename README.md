@@ -153,6 +153,7 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 - **Setup**: create a key at tokenfactory.nebius.com > **API keys** and set `NEBIUS_API_KEY` (in `.env` or the Render dashboard). With only `NEBIUS_API_KEY` set, the provider is chosen automatically; `NEBIUS_MODEL` picks another catalog model. The key is sent only as `Authorization: Bearer …` to `NEBIUS_BASE_URL` and is redacted from every error.
 - **What Nemotron decides**: nothing about money. It turns text into fields; the validator rejects anything malformed; amounts and verdicts come from the deterministic engine; a person approves; PayPal pays.
 - **Reasoning output**: if the model writes its reasoning before the answer (`…</think>`), only the answer after it is parsed; an answer cut off while still reasoning is reported as incomplete and blocks payment.
+- **Reasoning switch**: `NEBIUS_REASONING=off` (the default) sends `chat_template_kwargs: {enable_thinking: false}`, so Nemotron answers without its hidden reasoning pass. Measured on one timesheet extraction with Nemotron 3 Nano: 10.3 s and 846 output tokens with reasoning, 4.4 s and 270 tokens without, same JSON. `NEBIUS_REASONING=on` lets it reason. If an endpoint rejects the field, the call is repeated without it.
 - **Cost guard**: `AI_MAX_CALLS_PER_HOUR` and `AI_MAX_CALLS_PER_DAY` cap model calls for the whole server, and identical documents are served from a cache, so the public demo stays inside its credits.
 
 ## Agentic commerce over MCP
@@ -239,7 +240,7 @@ Free instances sleep when idle; cases, approvals and receipts live in memory and
 ## Tests
 
 ```bash
-npm test             # node --test: 164 tests, no network
+npm test             # node --test: 165 tests, no network
 npm run e2e          # real Chromium: picks a sample, approves, pays via MOCK PayPal; screenshots to e2e-screenshots/
 npm run e2e -- --update-docs   # the same, and it replaces the README screenshots in docs/img/
 ```

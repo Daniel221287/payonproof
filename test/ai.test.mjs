@@ -143,6 +143,25 @@ test('Nebius Token Factory: NVIDIA Nemotron by default, OpenAI-compatible call, 
   );
 });
 
+test('Nebius reasoning switch: off by default sends enable_thinking=false, on sends nothing, a rejection drops it', async () => {
+  const NKEY = 'test-nebius-key-555555';
+  const ok = () => ({ body: { model: 'm', choices: [{ message: { content: '{"a":1}' }, finish_reason: 'stop' }] } });
+  const off = scriptedFetch([ok()]);
+  await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: off.fetch }).generateJson({ system: 'S', user: 'U' });
+  assert.deepEqual(off.calls[0].body.chat_template_kwargs, { enable_thinking: false });
+  const on = scriptedFetch([ok()]);
+  await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_REASONING: 'on' }), { fetch: on.fetch }).generateJson({ system: 'S', user: 'U' });
+  assert.equal(on.calls[0].body.chat_template_kwargs, undefined);
+  assert.throws(() => resolveAiConfig({ NEBIUS_API_KEY: NKEY, NEBIUS_REASONING: 'maybe' }), /NEBIUS_REASONING must be on or off/);
+  const openai = scriptedFetch([ok()]);
+  await createAiProvider(resolveAiConfig({ AI_PROVIDER: 'openai', AI_BASE_URL: 'http://127.0.0.1:11434/v1', AI_MODEL: 'x' }), { fetch: openai.fetch }).generateJson({ system: 'S', user: 'U' });
+  assert.equal(openai.calls[0].body.chat_template_kwargs, undefined, 'only the Nebius provider sends it');
+  const rejecting = scriptedFetch([{ status: 400, body: { error: { message: 'Unknown field chat_template_kwargs' } } }, ok()]);
+  const out = await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: rejecting.fetch }).generateJson({ system: 'S', user: 'U' });
+  assert.deepEqual(out.json, { a: 1 });
+  assert.equal(rejecting.calls[1].body.chat_template_kwargs, undefined, 'retried without it');
+});
+
 test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
   assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
   assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });
