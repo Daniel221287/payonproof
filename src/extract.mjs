@@ -42,16 +42,16 @@ const SHAPES = {
   "contractRef": string | null,
   "currency": ISO 4217 code such as "EUR",
   "payeeEmail": string | null (PayPal/email address the invoice asks to be paid to),
-  "lines": [ { "id": string (position number as printed), "kind": "labour" | "material", "worker": string | null (person, labour lines only), "role": string | null (trade as printed, labour lines only), "item": string | null (material name without its code, material lines only), "itemCode": string | null (article code if printed, e.g. in brackets), "date": "YYYY-MM-DD", "quantity": number, "unit": string (as printed), "unitPrice": number, "lineTotal": number (the line amount AS PRINTED, even if it looks wrong) } ],
+  "lines": [ { "id": string (position number as printed), "kind": "labour" | "material", "worker": string | null (person, labour lines only), "role": string | null (trade as printed, labour lines only), "item": string | null (material name without its article code, material lines only: "Steel mesh Q188 (SM-188)" -> "Steel mesh Q188"), "itemCode": string | null (the article code if printed, e.g. in brackets: "SM-188"), "date": "YYYY-MM-DD", "quantity": number, "unit": string (as printed), "unitPrice": number, "lineTotal": number (the line amount AS PRINTED, even if it looks wrong) } ],
   "total": number | null (invoice total as printed)
 }`,
   timesheet: `{
   "sheetRef": string | null (timesheet number),
   "siteManager": string | null (name of the main contractor's site manager printed on the sheet, e.g. after "Site manager", "Bauleitung" or "Kierownik budowy"),
-  "entries": [ { "ref": string | null (row number, counting from 1), "worker": string (as printed), "role": string | null (trade as printed in that row), "date": "YYYY-MM-DD", "hours": number, "signed": boolean (true if the row shows a signature or sign-off by anyone; "not signed", "nicht unterschrieben", "brak podpisu", empty or missing sign-off means false), "signedBy": string | null (the name written in that row's sign-off, exactly as printed, whoever it is; null if no name is written) } ]
+  "entries": [ { "ref": string | null (row number, counting from 1), "worker": string (as printed), "role": string | null (trade as printed in that row), "date": "YYYY-MM-DD", "hours": number, "signed": boolean (true if the row shows a signature or sign-off by anyone; "not signed", "nicht unterschrieben", "brak podpisu", empty or missing sign-off means false), "signedBy": string | null (the name written in that row's sign-off, exactly as printed but without a word such as "signed", "unterschrieben" or "podpisano" before it, whoever it is; null if no name is written) } ]
 }`,
   delivery_notes: `{
-  "notes": [ { "ref": string (delivery note number), "item": string (as printed), "itemCode": string | null (article code), "quantity": number, "unit": string (as printed), "date": "YYYY-MM-DD", "receivedBy": string | null } ]
+  "notes": [ { "ref": string (delivery note number), "item": string (as printed, without its article code), "itemCode": string | null (the article code if printed, e.g. in brackets), "quantity": number, "unit": string (as printed), "date": "YYYY-MM-DD", "receivedBy": string | null } ]
 }`,
 };
 

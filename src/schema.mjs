@@ -7,7 +7,7 @@
  * warnings are shown to the human but do not block.
  */
 import { AmountError, SUPPORTED_CURRENCIES, toScaledInt } from './money.mjs';
-import { matchKey, normalizeUnit } from './normalize.mjs';
+import { matchKey, normalizeUnit, splitBracketedCode, stripSignOffWords } from './normalize.mjs';
 
 export const DOCUMENT_TYPES = Object.freeze(['contract', 'invoice', 'timesheet', 'delivery_notes']);
 export const LANGUAGES = Object.freeze(['en', 'de', 'pl', 'uk']);
@@ -205,6 +205,24 @@ function readKind(obj, key, path, issues) {
   return null;
 }
 
+/** The signer's name as written, without a sign-off word in front of it ("unterschrieben K. Vogelsang"). */
+function readSigner(obj, key, path, issues) {
+  const text = readString(obj, key, path, issues, { required: false, max: 120 });
+  if (text === null) return null;
+  const name = stripSignOffWords(text);
+  if (name !== text) issues.warn(`${path}.${key}`, name ? `"${text}" read as the name "${name}"` : `"${text}" names no signer`);
+  return name || null;
+}
+
+/** A missing article code that is printed in brackets after the item ("Rebar B500B (RB-500B)"). */
+function codeFromBrackets(item, itemCode, path, issues) {
+  if (itemCode !== null || !item) return itemCode;
+  const split = splitBracketedCode(item);
+  if (!split) return itemCode;
+  issues.warn(`${path}.itemCode`, `code "${split.code}" read from the brackets in "${item}"`);
+  return split.code;
+}
+
 function readBoolean(obj, key, path, issues) {
   const value = obj[key];
   const at = `${path}.${key}`;
@@ -346,6 +364,7 @@ export function validateInvoice(raw) {
       lineTotalCents: readScaled(line, 'lineTotal', at, issues, { decimals: 2, max: 10_000_000_000 }),
     };
     entry.unit = entry.unitAsWritten === null ? null : normalizeUnit(entry.unitAsWritten);
+    if (kind === 'material') entry.itemCode = codeFromBrackets(entry.item, entry.itemCode, at, issues);
     if (entry.id !== null) {
       if (ids.has(entry.id)) issues.error(`${at}.id`, `duplicate line id "${entry.id}"`);
       ids.add(entry.id);
@@ -383,7 +402,7 @@ export function validateTimesheet(raw) {
       date: readDate(entryRaw, 'date', at, issues),
       hoursMilli: readScaled(entryRaw, 'hours', at, issues, { decimals: 3, positive: true, max: 24_000 }),
       signed: readBoolean(entryRaw, 'signed', at, issues),
-      signedBy: readString(entryRaw, 'signedBy', at, issues, { required: false, max: 120 }),
+      signedBy: readSigner(entryRaw, 'signedBy', at, issues),
     });
   });
   return finish(issues, data);
@@ -417,6 +436,7 @@ export function validateDeliveryNotes(raw) {
       receivedBy: readString(note, 'receivedBy', at, issues, { required: false, max: 120 }),
     };
     entry.unit = entry.unitAsWritten === null ? null : normalizeUnit(entry.unitAsWritten);
+    entry.itemCode = codeFromBrackets(entry.item, entry.itemCode, at, issues);
     if (entry.ref !== null) {
       if (refs.has(entry.ref)) issues.error(`${at}.ref`, `duplicate delivery note "${entry.ref}"`);
       refs.add(entry.ref);

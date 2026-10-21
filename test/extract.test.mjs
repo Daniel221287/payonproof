@@ -72,7 +72,7 @@ test('the timesheet prompt asks for the site manager and the signer as printed; 
   const { system } = buildExtractionPrompt('timesheet', 'X');
   assert.match(system, /"siteManager": string \| null \(name of the main contractor's site manager printed on the sheet/);
   assert.match(system, /"signed": boolean \(true if the row shows a signature or sign-off by anyone/);
-  assert.match(system, /"signedBy": string \| null \(the name written in that row's sign-off, exactly as printed, whoever it is/);
+  assert.match(system, /"signedBy": string \| null \(the name written in that row's sign-off, exactly as printed but without a word such as "signed", "unterschrieben" or "podpisano" before it, whoever it is/);
   assert.match(system, /"role": string \| null \(trade as printed in that row\)/);
 });
 
@@ -196,4 +196,29 @@ test('the output schemas never force a value: a value that is not printed stays 
   const unprinted = { ...CANNED.invoice, lines: [{ ...CANNED.invoice.lines[0], quantity: null }] };
   assert.deepEqual(schemaErrors(OUTPUT_SCHEMAS.invoice, unprinted), []);
   assert.equal(validateExtraction('invoice', unprinted).ok, false, 'a quantity that is not printed is never invented');
+});
+
+test('variations seen in live Nemotron answers give the offline verdicts: a sign-off word before the signer, a code left in brackets', async () => {
+  const samples = loadSamples(fileURLToPath(new URL('../samples', import.meta.url)));
+  const cases = [
+    ['multilingual', 'timesheet', (raw) => { for (const entry of raw.entries) if (entry.signedBy) entry.signedBy = `unterschrieben ${entry.signedBy}`; }],
+    ['overbilled', 'invoice', (raw) => { for (const line of raw.lines) if (line.kind === 'material') { line.item = `${line.item} (${line.itemCode})`; line.itemCode = null; } }],
+  ];
+  for (const [sampleId, type, vary] of cases) {
+    const sample = samples.find((s) => s.id === sampleId);
+    const answers = Object.fromEntries(sample.documents.map((doc) => [doc.type, parseOffline(doc.type, doc.text)]));
+    const reference = verifyCase(assembleCaseInput(await extractDocuments(sample.documents, { provider: { id: 'offline', model: 'o', isAI: false, label: 'o' } })).input);
+    vary(answers[type]);
+    const provider = {
+      id: 'nebius', model: 'm', isAI: true, label: 'Nebius',
+      async generateJson(request) { return { json: structuredClone(answers[request.schema.name]), outputFormat: 'json_schema' }; },
+    };
+    const extraction = await extractDocuments(sample.documents, { provider });
+    const doc = extraction.documents.find((d) => d.type === type);
+    assert.equal(doc.status, 'ok');
+    assert.ok(doc.warnings.length > 0, `${sampleId}: the reading is shown as a warning`);
+    const result = verifyCase(assembleCaseInput(extraction).input);
+    assert.deepEqual(result.lines.map((l) => l.verdict), reference.lines.map((l) => l.verdict), sampleId);
+    assert.deepEqual(result.totals, reference.totals, sampleId);
+  }
 });

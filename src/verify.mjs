@@ -25,7 +25,7 @@
  *  - A contract payment cap limits the cumulative payable amount (OVER_CAP).
  */
 import { formatMoney, formatQuantity, isArithmeticallyConsistent, lineAmountCents } from './money.mjs';
-import { codeKey, matchKey, signerMatches } from './normalize.mjs';
+import { codeKey, matchKey, signerMatches, splitBracketedCode } from './normalize.mjs';
 
 export const ENGINE_VERSION = 'payonproof-verify/1.1';
 
@@ -65,7 +65,11 @@ function resolveMaterialRate(index, item, itemCode) {
     const byCode = index.byCode.get(codeKey(itemCode));
     if (byCode && byCode.kind === 'material') return byCode;
   }
-  return index.material.get(matchKey(item)) ?? null;
+  const named = index.material.get(matchKey(item));
+  if (named) return named;
+  // "Rebar B500B (RB-500B)" against a rate named "Rebar B500B": the name without the printed code.
+  const split = splitBracketedCode(item);
+  return split ? (index.material.get(matchKey(split.name)) ?? null) : null;
 }
 
 /**

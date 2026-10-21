@@ -42,6 +42,45 @@ function nameTokens(text) {
     .filter(Boolean);
 }
 
+// Words that introduce a sign-off instead of naming the signer, folded, longest first.
+const SIGN_OFF_WORDS = [
+  'signed off by', 'signed by', 'signed', 'sign-off',
+  'unterschrieben von', 'unterschrieben', 'abgezeichnet', 'gezeichnet', 'gez.',
+  'podpisano przez', 'podpisano', 'podpisala', 'podpisal', 'podpis',
+  'підписано', 'підписала', 'підписав', 'підпис',
+];
+
+/**
+ * The signer's name without the sign-off word in front of it: "unterschrieben K. Vogelsang" ->
+ * "K. Vogelsang", "signed by J. Smith" -> "J. Smith". Text without such a word is returned trimmed.
+ * @param {unknown} text
+ * @returns {string}
+ */
+export function stripSignOffWords(text) {
+  const raw = String(text ?? '').trim();
+  const folded = foldText(raw);
+  for (const word of SIGN_OFF_WORDS) {
+    if (!folded.startsWith(word)) continue;
+    const next = folded.charAt(word.length);
+    if (next && !word.endsWith('.') && !/[\s:.,;-]/.test(next)) continue;
+    if (foldText(raw.slice(0, word.length)) !== word) continue;
+    return raw.slice(word.length).replace(/^[\s:.,;-]+/, '').trim();
+  }
+  return raw;
+}
+
+/**
+ * An article code printed in brackets after a name: "Rebar B500B (RB-500B)" ->
+ * {name: "Rebar B500B", code: "RB-500B"}. A code has at least one digit, so "(red)" is not one.
+ * @param {unknown} text
+ * @returns {{name: string, code: string}|null}
+ */
+export function splitBracketedCode(text) {
+  const match = /^(.*?\S)\s*[([]\s*([\p{L}\p{N}][\p{L}\p{N}._/-]{0,38}[\p{L}\p{N}])\s*[)\]]$/u.exec(String(text ?? '').trim());
+  if (!match || !/\p{N}/u.test(match[2])) return null;
+  return { name: match[1], code: match[2] };
+}
+
 /**
  * Can this sign-off be the named person? The person's surname (the last full name part, or the
  * part before a comma: "Vogelsang, Katrin") must be written in full, in any order and with
