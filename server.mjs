@@ -125,8 +125,9 @@ function sameSecret(given, expected) {
 
 // An oversized body up to this size is read to its end and discarded before the 413 is sent, so the
 // client finishes sending and reads the answer (closing mid-upload shows up as a reset connection,
-// on Windows in particular). Anything larger is cut off.
+// on Windows in particular). Anything larger, or slower than DRAIN_TIMEOUT_MS, is cut off.
 const DRAIN_LIMIT_BYTES = 4 * MAX_BODY_BYTES;
+const DRAIN_TIMEOUT_MS = 5_000;
 
 async function readJsonBody(req) {
   const declared = Number(req.headers['content-length'] ?? 0);
@@ -134,13 +135,26 @@ async function readJsonBody(req) {
   if (declared > DRAIN_LIMIT_BYTES) throw tooLarge();
   const chunks = [];
   let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > DRAIN_LIMIT_BYTES) {
-      req.destroy();
-      throw tooLarge();
+  let drainTimer = null;
+  const drainBriefly = () => {
+    drainTimer ??= setTimeout(() => req.destroy(), DRAIN_TIMEOUT_MS);
+  };
+  if (declared > MAX_BODY_BYTES) drainBriefly();
+  try {
+    for await (const chunk of req) {
+      size += chunk.length;
+      if (size > DRAIN_LIMIT_BYTES) {
+        req.destroy();
+        throw tooLarge();
+      }
+      if (size <= MAX_BODY_BYTES) chunks.push(chunk);
+      else drainBriefly();
     }
-    if (size <= MAX_BODY_BYTES) chunks.push(chunk);
+  } catch (error) {
+    if (drainTimer) throw tooLarge();
+    throw error;
+  } finally {
+    if (drainTimer) clearTimeout(drainTimer);
   }
   if (size > MAX_BODY_BYTES || declared > MAX_BODY_BYTES) throw tooLarge();
   const text = Buffer.concat(chunks).toString('utf8');

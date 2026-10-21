@@ -22,6 +22,7 @@ const PHRASES = {
     NO_EVIDENCE_LABOUR: () => 'no timesheet entry for this day',
     NO_EVIDENCE_MATERIAL: () => 'no delivery note for this delivery',
     NO_RATE: () => 'no agreed rate in the contract',
+    NAME_CODE_CONFLICT: () => 'the item name and the article code point to different contract items',
     UNIT_MISMATCH: () => 'the unit does not match the contract',
     EVIDENCE_USED: () => 'the evidence is already used by another line',
     UNSIGNED: ({ signedBy }) => (signedBy
@@ -44,6 +45,7 @@ const PHRASES = {
     NO_EVIDENCE_LABOUR: () => 'kein Stundenzettel für diesen Tag',
     NO_EVIDENCE_MATERIAL: () => 'kein Lieferschein für diese Lieferung',
     NO_RATE: () => 'kein vereinbarter Preis im Vertrag',
+    NAME_CODE_CONFLICT: () => 'Bezeichnung und Artikelnummer verweisen auf verschiedene Vertragspositionen',
     UNIT_MISMATCH: () => 'die Einheit entspricht nicht dem Vertrag',
     EVIDENCE_USED: () => 'der Nachweis ist bereits einer anderen Position zugeordnet',
     UNSIGNED: ({ signedBy }) => (signedBy
@@ -66,6 +68,7 @@ const PHRASES = {
     NO_EVIDENCE_LABOUR: () => 'brak wpisu w karcie pracy za ten dzień',
     NO_EVIDENCE_MATERIAL: () => 'brak dokumentu dostawy',
     NO_RATE: () => 'brak uzgodnionej stawki w umowie',
+    NAME_CODE_CONFLICT: () => 'nazwa materiału i kod artykułu wskazują różne pozycje umowy',
     UNIT_MISMATCH: () => 'jednostka jest niezgodna z umową',
     EVIDENCE_USED: () => 'dokument potwierdzający został już przypisany do innej pozycji',
     UNSIGNED: ({ signedBy }) => (signedBy
@@ -88,6 +91,7 @@ const PHRASES = {
     NO_EVIDENCE_LABOUR: () => 'немає запису в табелі за цей день',
     NO_EVIDENCE_MATERIAL: () => 'немає накладної на цю поставку',
     NO_RATE: () => 'у договорі немає погодженої ставки',
+    NAME_CODE_CONFLICT: () => 'назва матеріалу та код артикулу вказують на різні позиції договору',
     UNIT_MISMATCH: () => 'одиниця виміру не відповідає договору',
     EVIDENCE_USED: () => 'підтвердження вже зараховано до іншої позиції',
     UNSIGNED: ({ signedBy }) => (signedBy
@@ -157,7 +161,7 @@ const BODIES = {
 function phraseKey(finding, kind) {
   if (finding.code !== 'UNPROVEN') return finding.code;
   const cause = finding.params?.cause;
-  if (['NO_RATE', 'UNIT_MISMATCH', 'EVIDENCE_USED', 'ROLE_NO_RATE'].includes(cause)) return cause;
+  if (['NO_RATE', 'NAME_CODE_CONFLICT', 'UNIT_MISMATCH', 'EVIDENCE_USED', 'ROLE_NO_RATE'].includes(cause)) return cause;
   return kind === 'labour' ? 'NO_EVIDENCE_LABOUR' : 'NO_EVIDENCE_MATERIAL';
 }
 
@@ -253,15 +257,46 @@ export function templateMessage(facts) {
 
 const squash = (text) => String(text).replace(/\s+/g, ' ');
 
-// Is the whole text in the agreed language? Cheap script and word checks that catch a draft in the
-// wrong language (a live Nemotron draft for a Ukrainian crew came back in Russian).
-const CYRILLIC = /\p{Script=Cyrillic}/u;
-const LANGUAGE_CHECKS = {
-  uk: (text) => /[іїєґІЇЄҐ]/u.test(text) && !/[ыэъёЫЭЪЁ]/u.test(text),
-  pl: (text) => !CYRILLIC.test(text) && /[ąćęłńóśźżĄĆĘŁŃÓŚŹŻ]/u.test(text),
-  de: (text) => !CYRILLIC.test(text) && /\b(und|der|die|das|wir|Sie|Ihre?)\b/u.test(text),
-  en: (text) => !CYRILLIC.test(text) && /\b(the|and|we|you|your)\b/iu.test(text),
+// Is the text written in the agreed language? (A live Nemotron draft for a Ukrainian crew came back in
+// Russian.) Everything copied from the facts is removed first: names, items, reasons, amounts and dates
+// may be in any language and must neither make nor break the check. What is left must be in the right
+// script, use more of the agreed language's common words than of any other, and for Ukrainian contain
+// Ukrainian letters and no letters that only Russian uses.
+const MARKER_WORDS = {
+  en: 'the and of to for we you your is are was has have this with not our paid invoice line lines total amount dear regards please which from been',
+  de: 'und der die das den dem des wir sie ihre ihr ihnen für mit ist sind nicht von zu auf wird wurde rechnung position positionen betrag damen herren grüßen freundlichen bitte gesamt summe gezahlt bezahlt',
+  pl: 'i w z na nie za do się jest są oraz dla przez pozycja pozycji pozycje faktura faktury fakturze fakturę kwota kwotę kwoty państwo państwa szanowni pozdrowieniami pozdrowienia płatność zapłacono łącznie umowy umową stawka stawki',
+  uk: 'і й та в у на не за до що з ми ви ваш ваша вашого рахунок рахунку позиція позиції позицію сума суму шановні шановний повагою оплачено сплачено договору договір ставка ставкою загальна разом',
+  ru: 'и по счет счёт счета счету строка строки вместо уважением уважаемый уважаемые который которые это сумма произведена произведено также если нет',
 };
+const MARKERS = Object.fromEntries(Object.entries(MARKER_WORDS).map(([language, words]) => [language, new Set(words.split(' '))]));
+const LATIN_LANGUAGES = ['en', 'de', 'pl'];
+
+function withoutFacts(body, facts) {
+  const copied = [
+    facts.subcontractor, facts.mainContractor, facts.invoiceNumber, facts.claimed, facts.payable, facts.disputed,
+    facts.totalNote?.printed,
+    ...facts.disputedLines.flatMap((line) => [line.subject, line.date, line.claimed, line.payable, line.reasons]),
+    ...(facts.noteLines ?? []).flatMap((line) => [line.subject, line.date, line.written, line.proven, line.difference]),
+  ].filter((value) => typeof value === 'string' && value.trim() !== '').map(squash).sort((a, b) => b.length - a.length);
+  let rest = body;
+  for (const value of copied) rest = rest.replace(new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu'), ' ');
+  return rest;
+}
+
+/** @returns {boolean} true when the text (without what it copies from the facts) is in `language`. */
+export function writtenIn(language, body, facts) {
+  const rest = withoutFacts(body, facts).toLowerCase();
+  const words = rest.split(/\P{L}+/u).filter(Boolean);
+  const hits = Object.fromEntries(Object.entries(MARKERS).map(([lang, set]) => [lang, words.filter((word) => set.has(word)).length]));
+  const long = words.filter((word) => word.length > 1);
+  const cyrillicShare = long.length ? long.filter((word) => /\p{Script=Cyrillic}/u.test(word)).length / long.length : 0;
+  if (language === 'uk') {
+    return cyrillicShare >= 0.5 && (rest.match(/[іїєґ]/gu) ?? []).length >= 2 && !/[ыэъё]/u.test(rest) && hits.uk >= 2 && hits.uk > hits.ru;
+  }
+  if (!LATIN_LANGUAGES.includes(language)) return true;
+  return cyrillicShare <= 0.2 && hits[language] >= 2 && LATIN_LANGUAGES.every((other) => other === language || hits[language] > hits[other]);
+}
 
 /**
  * Check an AI draft against the facts. Returns the list of missing facts (empty = passed).
@@ -287,8 +322,7 @@ export function factCheckMessage(text, facts) {
     if (!body.includes(squash(line.difference))) missing.push(`difference ${line.difference} of line ${line.id} that may be invoiced`);
   }
   if (facts.totalNote && !body.includes(squash(facts.totalNote.printed))) missing.push(`printed invoice total ${facts.totalNote.printed}`);
-  const inLanguage = LANGUAGE_CHECKS[facts.language];
-  if (inLanguage && !inLanguage(body)) missing.push(`the whole text in ${facts.languageName}`);
+  if (!writtenIn(facts.language, body, facts)) missing.push(`the whole text in ${facts.languageName}`);
   return missing;
 }
 

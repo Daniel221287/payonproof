@@ -96,7 +96,8 @@
     return new Intl.NumberFormat('en-GB', { maximumFractionDigits: 3 }).format(milli / 1000);
   }
   // How the model was asked to answer (shown next to "Read by").
-  const OUTPUT_FORMATS = { json_schema: 'JSON Schema enforced', json_object: 'JSON mode', text: 'plain-text answer', mixed: 'mixed answer formats' };
+  // The format the model was asked for and the endpoint accepted (an endpoint may still ignore it; the validator checks every answer).
+  const OUTPUT_FORMATS = { json_schema: 'answer format: JSON Schema', json_object: 'answer format: JSON mode', text: 'answer format: plain text', mixed: 'mixed answer formats' };
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function shortDate(iso) {
     if (!iso) return '';

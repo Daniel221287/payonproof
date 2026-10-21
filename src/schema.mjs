@@ -205,13 +205,18 @@ function readKind(obj, key, path, issues) {
   return null;
 }
 
-/** The signer's name as written, without a sign-off word in front of it ("unterschrieben K. Vogelsang"). */
+/**
+ * The signer's name as written, without a sign-off word in front of it ("unterschrieben K. Vogelsang").
+ * A sign-off word with no name after it ("Podpis: ......", "gez.") stays as written: it then cannot
+ * match the site manager and the row is held as unsigned, instead of counting as an unchecked signature.
+ */
 function readSigner(obj, key, path, issues) {
   const text = readString(obj, key, path, issues, { required: false, max: 120 });
   if (text === null) return null;
   const name = stripSignOffWords(text);
-  if (name !== text) issues.warn(`${path}.${key}`, name ? `"${text}" read as the name "${name}"` : `"${text}" names no signer`);
-  return name || null;
+  if (!/\p{L}/u.test(name)) return text;
+  if (name !== text) issues.warn(`${path}.${key}`, `"${text}" read as the name "${name}"`);
+  return name;
 }
 
 /** A missing article code that is printed in brackets after the item ("Rebar B500B (RB-500B)"). */

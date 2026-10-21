@@ -234,17 +234,42 @@ function responseFormat(mode, schema) {
   return null;
 }
 
+/**
+ * What an endpoint said when it refused a request: the error message only. Validation errors may echo
+ * the whole request back (input_value=…, 'input': …), which must not look like a refused feature.
+ */
+function rejectionText({ json, text }) {
+  const error = json?.error;
+  const message = typeof error?.message === 'string' ? error.message
+    : typeof error === 'string' ? error
+      : typeof json?.message === 'string' ? json.message
+        : Array.isArray(json?.detail) ? json.detail.map((item) => `${(item?.loc ?? []).join('.')} ${item?.msg ?? ''}`).join('; ')
+          : typeof json?.detail === 'string' ? json.detail
+            : json ? '' : String(text ?? '');
+  return message
+    .replace(/input_value=[\s\S]*?(?=, input_type=)|input_value=[\s\S]*$/g, '')
+    .replace(/'input':[\s\S]*?(?=, '(?:ctx|url)':)|'input':[\s\S]*$/g, '')
+    .slice(0, 1000);
+}
+
 async function callOpenAi(fetchImpl, config, state, { system, user, schema }) {
   const url = `${config.baseUrl}/chat/completions`;
-  const sendsTemplateKwargs = () => config.provider === 'nebius' && config.reasoning === 'off' && state.templateKwargs !== false;
+  // This call's view of what the endpoint accepts. A downgrade is remembered for later calls only when
+  // the downgraded request succeeds, so one unrelated error cannot switch a feature off for good.
+  const local = { jsonMode: state.jsonMode, schemaMode: state.schemaMode, templateKwargs: state.templateKwargs };
+  const sendsTemplateKwargs = () => config.provider === 'nebius' && config.reasoning === 'off' && local.templateKwargs !== false;
+  // Without the reasoning switch Nemotron reasons again, and the reasoning counts toward the output.
+  const outputBudget = () => config.maxOutputTokens
+    ?? (config.provider === 'nebius' && config.reasoning === 'off' && local.templateKwargs === false ? REASONING_MAX_OUTPUT_TOKENS : null);
   const attempt = async (mode) => {
     const format = responseFormat(mode, schema);
+    const budget = outputBudget();
     const body = {
       model: config.model,
       temperature: 0,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       ...(format ? { response_format: format } : {}),
-      ...(config.maxOutputTokens ? { max_tokens: config.maxOutputTokens } : {}),
+      ...(budget ? { max_tokens: budget } : {}),
       // Nemotron on Token Factory: answer without the hidden reasoning pass (about 2x faster, 3x fewer tokens).
       ...(sendsTemplateKwargs() ? { chat_template_kwargs: { enable_thinking: false } } : {}),
     };
@@ -252,19 +277,21 @@ async function callOpenAi(fetchImpl, config, state, { system, user, schema }) {
     if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`;
     return { mode, ...(await send(fetchImpl, url, { method: 'POST', headers, body: JSON.stringify(body) }, config.timeoutMs, 'The AI endpoint')) };
   };
-  let result = await attempt(answerMode(state, schema));
-  // An endpoint that rejects an optional request feature gets the request again without it:
+  let result = await attempt(answerMode(local, schema));
+  // An endpoint that refuses an optional request feature gets the request again without it:
   // first the reasoning switch, then structured output (JSON mode instead), then JSON mode itself.
-  for (let tries = 0; tries < 3 && !result.response.ok && result.response.status === 400; tries += 1) {
-    if (sendsTemplateKwargs() && /chat_template_kwargs|enable_thinking/i.test(result.text)) state.templateKwargs = false;
-    else if (result.mode === 'json_schema' && /json_schema|response_format|schema|guided/i.test(result.text)) state.schemaMode = false;
-    else if (result.mode === 'json_object' && /response_format|json_object|json mode/i.test(result.text)) state.jsonMode = false;
+  for (let tries = 0; tries < 3 && !result.response.ok && [400, 422].includes(result.response.status); tries += 1) {
+    const reason = rejectionText(result);
+    if (sendsTemplateKwargs() && /chat_template_kwargs|enable_thinking/i.test(reason)) local.templateKwargs = false;
+    else if (result.mode === 'json_schema' && /json_schema|response_format|schema|guided/i.test(reason)) local.schemaMode = false;
+    else if (result.mode === 'json_object' && /response_format|json_object|json mode/i.test(reason)) local.jsonMode = false;
     else break;
-    result = await attempt(answerMode(state, schema));
+    result = await attempt(answerMode(local, schema));
   }
+  if (result.response.ok) Object.assign(state, local);
   const { response, json, text } = result;
   if (!response.ok) {
-    const message = json?.error?.message ?? (typeof json?.error === 'string' ? json.error : text);
+    const message = json?.error?.message ?? (typeof json?.error === 'string' ? json.error : (typeof json?.message === 'string' ? json.message : text));
     throw new AiError('AI_HTTP_ERROR', `The AI endpoint returned HTTP ${response.status}: ${redact(message, config.apiKey).slice(0, 300)}`, {
       status: response.status, retryable: [429, 500, 502, 503, 504].includes(response.status),
     });

@@ -186,7 +186,7 @@ export function createExtractionCache(limit = 100) {
 
 /**
  * How the model was asked to answer, for the provenance line: "json_schema" (structured output, the
- * schema was enforced), "json_object" (JSON mode), "text", "mixed", or null without a model answer.
+ * schema was requested and accepted), "json_object" (JSON mode), "text", "mixed", or null without a model answer.
  * @param {Array<{outputFormat?: string|null}>} results
  */
 function summarizeOutputFormat(results) {

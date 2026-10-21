@@ -365,3 +365,31 @@ test('a rate above the contract and a different trade: the lower trade rate appl
   assert.equal(line.findings[1].params.paidAtContract, false);
   assert.match(line.reason, /the contract rate for Foreman is €47\.00\/h\.$/);
 });
+
+test('a material whose name and code point at different contract items has no rate and proves nothing', () => {
+  const rates = [...RATES, { kind: 'material', name: 'Sand 0/2', aliases: [], code: 'SND-02', unit: 'm3', unitAsWritten: 'm3', priceCents: 3000 }];
+  // A delivery note for sand that carries the concrete code cannot prove an 18 m³ concrete line.
+  const sandWithConcreteCode = run({
+    contract: { rates },
+    lines: [concrete('1', '2026-09-16', 18)],
+    notes: [note('LS-1', '2026-09-16', 18, { item: 'Sand 0/2 (RMC-C30)', itemCode: 'RMC-C30' })],
+  });
+  assert.equal(byId(sandWithConcreteCode, '1').verdict, 'UNPROVEN');
+  assert.equal(byId(sandWithConcreteCode, '1').payableCents, 0);
+  // An invoice line named sand but coded as concrete is not priced at either rate.
+  const conflicting = run({
+    contract: { rates },
+    lines: [concrete('1', '2026-09-16', 18, 18 * 12800, { item: 'Sand 0/2 (RMC-C30)' })],
+    notes: [note('LS-1', '2026-09-16', 18)],
+  });
+  const line = byId(conflicting, '1');
+  assert.equal(line.verdict, 'UNPROVEN');
+  assert.equal(line.payableCents, 0);
+  assert.equal(line.findings[0].params.cause, 'NAME_CODE_CONFLICT');
+  assert.match(line.findings[0].reason, /name two different contract items: Sand 0\/2 by name, Ready-mix concrete C30\/37 by code/);
+  // Name and code that agree, or a code with a name the contract does not know, still match.
+  const agreeing = run({ contract: { rates }, lines: [concrete('1', '2026-09-16', 18, 18 * 12800, { item: 'Ready-mix concrete C30/37 (RMC-C30)', itemCode: null })], notes: [note('LS-1', '2026-09-16', 18)] });
+  assert.equal(byId(agreeing, '1').verdict, 'PROVEN');
+  const foreignName = run({ contract: { rates }, lines: [concrete('1', '2026-09-16', 18, 18 * 12800, { item: 'Transportbeton C30/37' })], notes: [note('LS-1', '2026-09-16', 18)] });
+  assert.equal(byId(foreignName, '1').verdict, 'PROVEN');
+});

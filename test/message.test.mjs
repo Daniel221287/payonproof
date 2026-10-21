@@ -210,3 +210,35 @@ test('the fact check also wants the agreed language: a draft for a Ukrainian cre
   const polish = await factsFor('overbilled', 'pl');
   assert.ok(factCheckMessage(templateMessage(english), polish).includes('the whole text in Polish'));
 });
+
+test('the language check ignores what is copied from the facts: every template passes in its language and fails in any other', async () => {
+  const languages = ['en', 'de', 'pl', 'uk'];
+  for (const sampleId of ['multilingual', 'overbilled', 'honest', 'rate-drift']) {
+    for (const language of languages) {
+      const facts = await factsFor(sampleId, language);
+      assert.deepEqual(factCheckMessage(templateMessage(facts), facts), [], `${sampleId}/${language} template`);
+      for (const other of languages.filter((candidate) => candidate !== language)) {
+        const text = templateMessage(await factsFor(sampleId, other));
+        assert.ok(factCheckMessage(text, facts).includes(`the whole text in ${facts.languageName}`), `${sampleId}: ${other} text checked as ${language}`);
+      }
+    }
+  }
+});
+
+test('names in another script or spelling do not break the language check, and quoting one reason does not pass it', async () => {
+  const polish = await factsFor('multilingual', 'pl');
+  polish.disputedLines[0].subject = 'Микола Бондар';
+  assert.deepEqual(factCheckMessage(templateMessage(polish), polish), [], 'a Cyrillic worker name in a Polish text');
+  const english = await factsFor('overbilled', 'en');
+  english.subcontractor = 'ФОП Ткачук І.';
+  assert.deepEqual(factCheckMessage(templateMessage(english), english), [], 'a Cyrillic company name in an English text');
+  const ukrainian = await factsFor('rate-drift', 'uk');
+  ukrainian.mainContractor = 'ТОВ «Новые Технологии»';
+  ukrainian.subcontractor = 'ФОП Лысенко';
+  assert.deepEqual(factCheckMessage(templateMessage(ukrainian), ukrainian), [], 'Russian-spelled names in a Ukrainian text');
+  // An English text that quotes one Ukrainian reason is still English.
+  const plainUk = await factsFor('rate-drift', 'uk');
+  const asEnglish = templateMessage({ ...plainUk, language: 'en', languageName: 'English' })
+    .replace(/Reason: [^.]*\./, `Reason: ${plainUk.disputedLines[0].reasons}.`);
+  assert.ok(factCheckMessage(asEnglish, plainUk).includes('the whole text in Ukrainian'));
+});

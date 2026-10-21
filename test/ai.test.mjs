@@ -252,6 +252,49 @@ test('a timeout while the answer body is still arriving is an AI timeout, retrie
   assert.equal(calls.length, 2);
 });
 
+test('fallbacks: an error that echoes the request is not a refused feature, and a downgrade sticks only when it works', async () => {
+  const NKEY = 'test-nebius-key-121212';
+  const SCHEMA = { name: 'invoice', schema: { type: 'object', additionalProperties: false, properties: { a: { type: 'number' } }, required: ['a'] } };
+  const ok = () => ({ body: { model: 'm', choices: [{ message: { content: '{"a":1}' }, finish_reason: 'stop' }] } });
+  // vLLM/pydantic style: the message echoes the whole request, including chat_template_kwargs and json_schema.
+  const echo = { status: 400, body: { object: 'error', message: "1 validation error for ChatCompletionRequest\n  Value error, messages too long [type=value_error, input_value={'model': 'm', 'response_format': {'type': 'json_schema'}, 'chat_template_kwargs': {'enable_thinking': False}}, input_type=dict]" } };
+  const unrelated = scriptedFetch([echo, ok()]);
+  const provider = createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: unrelated.fetch });
+  await assert.rejects(provider.generateJson({ system: 'S', user: 'U', schema: SCHEMA }), /HTTP 400/);
+  assert.equal(unrelated.calls.length, 1, 'no feature was dropped for an unrelated error');
+  await provider.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(unrelated.calls[1].body.response_format.type, 'json_schema');
+  assert.deepEqual(unrelated.calls[1].body.chat_template_kwargs, { enable_thinking: false });
+  // The same with the echo as JSON and no input_type after it.
+  const jsonEcho = (body) => ({ status: 400, body: { object: 'error', message: `1 validation error\n  Value error, temperature not allowed [type=value_error, input_value=${JSON.stringify(body)}]` } });
+  const echoed = scriptedFetch([jsonEcho({ messages: [], response_format: { type: 'json_schema' }, chat_template_kwargs: { enable_thinking: false } })]);
+  await assert.rejects(createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: echoed.fetch }).generateJson({ system: 'S', user: 'U', schema: SCHEMA }), /HTTP 400/);
+  assert.equal(echoed.calls.length, 1);
+
+  // The schema is refused, but the JSON-mode retry fails too: nothing is remembered.
+  const both = scriptedFetch([
+    { status: 400, body: { error: { message: 'response_format json_schema is not supported' } } },
+    { status: 400, body: { error: { message: 'messages: too many tokens' } } },
+    ok(),
+  ]);
+  const again = createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: both.fetch });
+  await assert.rejects(again.generateJson({ system: 'S', user: 'U', schema: SCHEMA }), /too many tokens/);
+  await again.generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(both.calls[2].body.response_format.type, 'json_schema', 'the schema is tried again next time');
+
+  // FastAPI-style 422 naming the refused field.
+  const fastapi = scriptedFetch([{ status: 422, body: { detail: [{ loc: ['body', 'response_format', 'json_schema'], msg: 'Extra inputs are not permitted', input: { name: 'invoice' } }] } }, ok()]);
+  const tgi = await createAiProvider(resolveAiConfig({ AI_PROVIDER: 'openai', AI_BASE_URL: 'http://127.0.0.1:8080/v1', AI_MODEL: 'x' }), { fetch: fastapi.fetch }).generateJson({ system: 'S', user: 'U', schema: SCHEMA });
+  assert.equal(tgi.outputFormat, 'json_object');
+
+  // Without the reasoning switch Nemotron reasons again: the larger output budget comes with it.
+  const kwargs = scriptedFetch([{ status: 400, body: { error: { message: 'Unknown field chat_template_kwargs' } } }, ok()]);
+  await createAiProvider(resolveAiConfig({ NEBIUS_API_KEY: NKEY }), { fetch: kwargs.fetch }).generateJson({ system: 'S', user: 'U' });
+  assert.equal(kwargs.calls[0].body.max_tokens, undefined);
+  assert.equal(kwargs.calls[1].body.chat_template_kwargs, undefined);
+  assert.equal(kwargs.calls[1].body.max_tokens, 16384);
+});
+
 test('reasoning models: thinking before the answer is skipped, an answer cut off while reasoning is incomplete', () => {
   assert.deepEqual(parseModelJson('<think>Totals {a} and {b}?</think>\n{"a":1}'), { a: 1 });
   assert.deepEqual(parseModelJson('Check {x} first.</think>{"a":2}'), { a: 2 });

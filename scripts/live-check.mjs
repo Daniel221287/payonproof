@@ -20,7 +20,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const runsAt = args.indexOf('--runs');
 const runs = runsAt >= 0 ? Math.max(1, Number(args[runsAt + 1]) || 1) : 1;
-const chosen = args.filter((arg, index) => !arg.startsWith('--') && index !== runsAt + 1);
+const chosen = args.filter((arg, index) => !arg.startsWith('--') && !(runsAt >= 0 && index === runsAt + 1));
 
 const env = { ...process.env };
 loadDotEnv(path.join(root, '.env'), env);

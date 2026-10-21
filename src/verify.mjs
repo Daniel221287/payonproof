@@ -60,16 +60,21 @@ function buildRateIndex(rates) {
   return { labour, material, byCode };
 }
 
+/**
+ * The contract rate of a material, by article code first, then by name ("Rebar B500B (RB-500B)" is
+ * also tried as "Rebar B500B"). A code and a name that point at two different contract items
+ * contradict each other: then there is no rate, and `conflict` names both.
+ * @returns {{rate: object|null, conflict: {byCode: object, byName: object}|null}}
+ */
 function resolveMaterialRate(index, item, itemCode) {
-  if (itemCode) {
-    const byCode = index.byCode.get(codeKey(itemCode));
-    if (byCode && byCode.kind === 'material') return byCode;
-  }
-  const named = index.material.get(matchKey(item));
-  if (named) return named;
-  // "Rebar B500B (RB-500B)" against a rate named "Rebar B500B": the name without the printed code.
   const split = splitBracketedCode(item);
-  return split ? (index.material.get(matchKey(split.name)) ?? null) : null;
+  const byName = index.material.get(matchKey(item)) ?? (split ? (index.material.get(matchKey(split.name)) ?? null) : null);
+  const byCode = itemCode ? (index.byCode.get(codeKey(itemCode)) ?? null) : null;
+  if (byCode && byCode.kind === 'material') {
+    if (byName && byName.rateKey !== byCode.rateKey) return { rate: null, conflict: { byCode, byName } };
+    return { rate: byCode, conflict: null };
+  }
+  return { rate: byName, conflict: null };
 }
 
 /**
@@ -152,7 +157,7 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
   const index = buildRateIndex(contract.rates);
   const evidence = buildEvidence(timesheets, deliveryNotes);
   for (const note of evidence.notes) {
-    const rate = resolveMaterialRate(index, note.item, note.itemCode);
+    const { rate } = resolveMaterialRate(index, note.item, note.itemCode);
     note.rateKey = rate ? rate.rateKey : null;
     note.itemKey = matchKey(note.item);
   }
@@ -190,9 +195,14 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
     const earlierId = firstBySignature.get(signature);
     if (earlierId === undefined) firstBySignature.set(signature, line.id);
 
-    const rate = isLabour ? (index.labour.get(matchKey(line.role)) ?? null) : resolveMaterialRate(index, line.item, line.itemCode);
+    const material = isLabour ? null : resolveMaterialRate(index, line.item, line.itemCode);
+    const rate = isLabour ? (index.labour.get(matchKey(line.role)) ?? null) : material.rate;
     let priceable = true;
-    if (!rate) {
+    if (!rate && material?.conflict) {
+      priceable = false;
+      add('UNPROVEN', `"${line.item}" and its code ${line.itemCode} name two different contract items: ${material.conflict.byName.name} by name, ${material.conflict.byCode.name} by code.`,
+        { cause: 'NAME_CODE_CONFLICT' });
+    } else if (!rate) {
       priceable = false;
       add('UNPROVEN', isLabour
         ? `Contract ${contract.contractId} has no rate for the role "${line.role}".`

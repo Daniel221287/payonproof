@@ -125,3 +125,27 @@ test('delivery notes: duplicate note numbers are rejected; the dispatcher valida
   assert.equal(validateExtraction('delivery_notes', { notes: [note] }).ok, true);
   assert.throws(() => validateExtraction('receipt', {}), TypeError);
 });
+
+test('a signer name loses the sign-off word in front of it; a sign-off word without a name stays as written', () => {
+  const sheet = (signedBy) => ({ sheetRef: 'TS', siteManager: 'Katrin Vogelsang', entries: [{ ref: '1', worker: 'Adam Kordecki', role: null, date: '2026-09-14', hours: 9, signed: true, signedBy }] });
+  const read = validateTimesheet(sheet('unterschrieben K. Vogelsang'));
+  assert.equal(read.data.entries[0].signedBy, 'K. Vogelsang');
+  assert.match(read.warnings[0].message, /"unterschrieben K\. Vogelsang" read as the name "K\. Vogelsang"/);
+  // No name after the word: kept, so it cannot match the site manager and the row is held as unsigned.
+  for (const text of ['Podpis: ..............', 'signed: -', 'unterschrieben', 'gez.']) {
+    const kept = validateTimesheet(sheet(text));
+    assert.equal(kept.data.entries[0].signedBy, text, text);
+    assert.deepEqual(kept.warnings, [], text);
+  }
+});
+
+test('a missing article code is read from brackets after the item, with a warning; words in brackets are not codes', () => {
+  const material = { id: '1', kind: 'material', worker: null, role: null, item: 'Rebar B500B (RB-500B)', itemCode: null, date: '2026-09-15', quantity: 1.2, unit: 't', unitPrice: 1040, lineTotal: 1248 };
+  const read = validateInvoice(invoice({ total: 1248 }, material));
+  assert.equal(read.data.lines[0].itemCode, 'RB-500B');
+  assert.match(read.warnings.map((w) => w.message).join(' '), /code "RB-500B" read from the brackets/);
+  const given = validateInvoice(invoice({ total: 1248 }, { ...material, itemCode: 'RB-500B-X' }));
+  assert.equal(given.data.lines[0].itemCode, 'RB-500B-X', 'a printed code field wins');
+  const words = validateInvoice(invoice({ total: 1248 }, { ...material, item: 'Membrane (red)' }));
+  assert.equal(words.data.lines[0].itemCode, null);
+});
