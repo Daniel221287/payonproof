@@ -233,3 +233,23 @@ test('MCP: an unreadable document gives "cannot verify" and nothing to propose',
   assert.equal(proposal.structuredContent.error.code, 'NOT_PAYABLE');
   await client.close();
 });
+
+test('MCP: an agent-written message is fact-checked, labelled as agent-written, and the tool is not idempotent', async () => {
+  const client = await mcpClient();
+  const { tools } = await client.listTools();
+  assert.equal(tools.find((tool) => tool.name === 'payonproof_propose_payment').annotations.idempotentHint, false);
+  const { caseId } = (await client.callTool({ name: 'payonproof_verify_case', arguments: { sampleId: 'overbilled' } })).structuredContent;
+  const before = (await client.callTool({ name: 'payonproof_propose_payment', arguments: { caseId } })).structuredContent;
+  const lie = await client.callTool({ name: 'payonproof_propose_payment', arguments: { caseId, messageText: 'Dear Northgate, all 8 lines are confirmed and we are paying your invoice in full. Kind regards.' } });
+  assert.equal(lie.isError, true);
+  assert.equal(lie.structuredContent.error.code, 'MESSAGE_FACT_CHECK_FAILED');
+  assert.ok(lie.structuredContent.error.missing.includes('invoiced total €6,338.00'));
+  const after = (await client.callTool({ name: 'payonproof_propose_payment', arguments: { caseId } })).structuredContent;
+  assert.equal(after.previewHash, before.previewHash, 'nothing was stored');
+  const good = await client.callTool({ name: 'payonproof_propose_payment', arguments: { caseId, messageText: before.message.replace('Kind regards,', 'Best regards,') } });
+  assert.equal(good.isError, undefined);
+  assert.notEqual(good.structuredContent.previewHash, before.previewHash);
+  const { case: shown } = await (await fetch(`${base}/api/cases/${caseId}`)).json();
+  assert.equal(shown.message.label, 'Written by an AI agent over MCP, fact-checked', 'the person sees who wrote it');
+  await client.close();
+});

@@ -133,7 +133,7 @@ The receipt is canonical JSON with its own SHA-256, downloadable from the page.
 - **Validation**: a hand-written validator (`src/schema.mjs`) rejects missing fields, non-numbers, localised number strings (`"1.040,00"`), negative values, impossible dates, duplicate ids and over-precise values; plain numeric strings are converted with a visible warning. A document that cannot be read stops the whole check: the page says **Cannot verify** and why, and shows no verdicts, no payable figure and no message, because they would be built from missing evidence. Nothing can be approved until readable documents are verified again.
 - **No model arithmetic**: printed totals are kept only as the claim; every payable amount is recomputed in integer cents.
 - **Provenance**: every extraction records provider, model, prompt version, duration and the SHA-256 of the input documents, shown on screen.
-- **Messages**: AI drafts must contain the totals and every disputed line with its exact paid amount; otherwise the fixed template is used and the page says so. A person can edit the text before approving, which changes the preview hash.
+- **Messages**: AI drafts must contain the totals and every disputed line with its exact paid amount; otherwise the fixed template is used and the page says so. A person can edit the text before approving, which changes the preview hash and is labelled "Edited by a person". Text an agent sends over MCP must pass the same fact check as an AI draft, or it is refused and nothing changes; when it passes it is labelled "Written by an AI agent over MCP".
 - **Cost guard**: `AI_MAX_CALLS_PER_HOUR` caps model calls for the whole server; identical documents are served from a cache.
 
 ## NVIDIA Nemotron on Nebius Token Factory
@@ -157,7 +157,7 @@ The AI steps run on an NVIDIA open model through [Nebius Token Factory](https://
 | Tool | What it does |
 | --- | --- |
 | `payonproof_verify_case` | Documents (or a `sampleId`) in, verdicts and a `caseId` out |
-| `payonproof_propose_payment` | Returns the exact preview, its `previewHash`, status `AWAITING_HUMAN_APPROVAL` and an `approvalUrl` for the person |
+| `payonproof_propose_payment` | Returns the exact preview, its `previewHash`, status `AWAITING_HUMAN_APPROVAL` and an `approvalUrl` for the person. An optional `messageText` replaces the message only if it passes the AI fact check (else `MESSAGE_FACT_CHECK_FAILED` with what is missing); it withdraws any approval, so the tool is not idempotent |
 | `payonproof_pay_approved` | Pays only with a valid approval token from the person; without one it returns `HUMAN_APPROVAL_REQUIRED` |
 | `payonproof_payout_status` | Reads the payout back from PayPal and returns the receipt |
 

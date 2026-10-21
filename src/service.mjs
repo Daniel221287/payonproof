@@ -15,7 +15,7 @@ import { AiError, createAiProvider } from './ai.mjs';
 import { ApprovalError } from './approval.mjs';
 import { hashCanonical } from './canonical.mjs';
 import { assembleCaseInput, createExtractionCache, describeIssues, extractDocuments } from './extract.mjs';
-import { buildMessageFacts, draftMessage, LANGUAGE_NAMES } from './message.mjs';
+import { buildMessageFacts, draftMessage, factCheckMessage, LANGUAGE_NAMES } from './message.mjs';
 import { centsToDecimalString } from './money.mjs';
 import { buildPayoutBody, senderBatchIdFromPreviewHash } from './paypal.mjs';
 import { buildProposal, messageSha256 } from './proposal.mjs';
@@ -463,10 +463,13 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
 
     /**
      * Replace the message text. Changes the previewHash and revokes approvals.
+     * A person's edit is stored as written and labelled as such. An agent's text (MCP) must pass the
+     * same fact check as an AI draft; if it does not, nothing is stored and nothing changes.
      * @param {string} caseId
      * @param {string} text
+     * @param {{author?: 'person'|'agent'}} [options]
      */
-    updateMessage(caseId, text) {
+    updateMessage(caseId, text, { author = 'person' } = {}) {
       const record = requireCase(caseId);
       if (record.payout && !['NOT_SENT', 'REJECTED'].includes(record.payout.state)) {
         throw new ServiceError(409, 'ALREADY_PAID', 'This case was already sent to PayPal and can no longer change.');
@@ -475,10 +478,21 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       if (typeof text !== 'string' || text.trim() === '') throw new ServiceError(400, 'MESSAGE_REQUIRED', 'The message cannot be empty.');
       if (text.length > LIMITS.maxMessageChars) throw new ServiceError(400, 'MESSAGE_TOO_LONG', `Keep the message under ${LIMITS.maxMessageChars} characters.`);
       const clean = text.replace(/\r\n?/g, '\n');
-      record.message = { ...record.message, text: clean, source: 'human', label: 'Edited by a person', note: null, sha256: messageSha256(clean) };
+      if (author === 'agent') {
+        const facts = buildMessageFacts({ contract: record.input.contract, invoice: record.input.invoice, verification: record.verification });
+        const missing = factCheckMessage(clean, facts);
+        if (missing.length > 0) {
+          throw new ServiceError(422, 'MESSAGE_FACT_CHECK_FAILED',
+            `The message was not saved. Like an AI draft, a message written by an agent must state ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' and more' : ''}, with the amounts written exactly as in the current message.`,
+            { missing });
+        }
+        record.message = { ...record.message, text: clean, source: 'agent', label: 'Written by an AI agent over MCP, fact-checked', note: null, sha256: messageSha256(clean) };
+      } else {
+        record.message = { ...record.message, text: clean, source: 'human', label: 'Edited by a person', note: null, sha256: messageSha256(clean) };
+      }
       record.proposal = proposalFor(record, clean);
       approvals.revokeCase(caseId);
-      touch(record, 'MESSAGE_EDITED', { previewHash: record.proposal.previewHash });
+      touch(record, author === 'agent' ? 'MESSAGE_WRITTEN_BY_AGENT' : 'MESSAGE_EDITED', { previewHash: record.proposal.previewHash });
       return view(record);
     },
 

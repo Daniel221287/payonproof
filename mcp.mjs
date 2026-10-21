@@ -75,7 +75,7 @@ function errorResult(error) {
   if (error instanceof ApprovalError) {
     return failure('HUMAN_APPROVAL_REQUIRED', `${error.message} A human must approve this exact payment in the PayOnProof page.`, { detail: error.code });
   }
-  if (error instanceof ServiceError) return failure(error.code, error.message);
+  if (error instanceof ServiceError) return failure(error.code, error.message, error.extra?.missing ? { missing: error.extra.missing } : {});
   throw error;
 }
 
@@ -114,15 +114,18 @@ export function createMcpServer({ service, approvalUrlFor }) {
 
   server.registerTool('payonproof_propose_payment', {
     title: 'Propose the payment for human approval',
-    description: 'Returns the exact payment preview (payee, currency, amount, paid lines, message hash) and its previewHash. Status is AWAITING_HUMAN_APPROVAL: a human must open approvalUrl and approve. Optionally replaces the explanation message first (this changes the previewHash).',
+    description: 'Returns the exact payment preview (payee, currency, amount, paid lines, message hash) and its previewHash. Status is AWAITING_HUMAN_APPROVAL: a human must open approvalUrl and approve. '
+      + 'Optionally replaces the message to the subcontractor first. Your text must pass the same fact check as an AI draft (payable total, invoiced total, every disputed line with its paid amount, written exactly as in the current message); '
+      + 'if it does not, nothing is saved and the error lists what is missing. A saved text is labelled as written by an AI agent, changes the previewHash and withdraws any approval.',
     inputSchema: {
       caseId: z.string().min(1).max(64),
-      messageText: z.string().min(1).max(4000).optional().describe('Replacement text of the message to the subcontractor.'),
+      messageText: z.string().min(1).max(4000).optional().describe('Replacement text of the message to the subcontractor (fact-checked; withdraws any approval).'),
     },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    // Not idempotent: a call with messageText withdraws the person's approval every time.
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async ({ caseId, messageText }) => {
     try {
-      const caseView = messageText === undefined ? service.getCase(caseId) : service.updateMessage(caseId, messageText);
+      const caseView = messageText === undefined ? service.getCase(caseId) : service.updateMessage(caseId, messageText, { author: 'agent' });
       if (!caseView.proposal) return failure('NOT_PAYABLE', 'This case has no payment proposal.', { blockers: caseView.blockers.map((b) => b.reason) });
       const { proposal } = caseView;
       return result({

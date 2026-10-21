@@ -270,3 +270,24 @@ test('pasted documents never fall back: a failed AI provider leaves them unreada
   assert.equal(caseView.verification, null);
   assert.equal(caseView.proposal, null);
 });
+
+test('a message written by an agent must pass the AI fact check; a failing one changes nothing', async () => {
+  const { service } = setup();
+  const caseView = await service.analyze({ sampleId: 'overbilled' });
+  const { approval } = service.approve(caseView.id, { previewHash: caseView.proposal.previewHash, confirm: true });
+  const lie = 'Dear Northgate, all 8 lines are confirmed and we are paying your invoice in full. Kind regards.';
+  assert.throws(() => service.updateMessage(caseView.id, lie, { author: 'agent' }), (e) => e.status === 422 && e.code === 'MESSAGE_FACT_CHECK_FAILED'
+    && e.extra.missing.includes('payable total €5,035.00') && e.extra.missing.includes('line 4'));
+  const unchanged = service.getCase(caseView.id);
+  assert.equal(unchanged.message.text, caseView.message.text, 'nothing is stored');
+  assert.equal(unchanged.proposal.previewHash, caseView.proposal.previewHash);
+  assert.equal(unchanged.approval.state, 'active', 'the approval stands');
+
+  const rewritten = caseView.message.text.replace('Dear Northgate Steel Crew Sp. z o.o.,', 'Hello team,');
+  const saved = service.updateMessage(caseView.id, rewritten, { author: 'agent' });
+  assert.equal(saved.message.source, 'agent');
+  assert.equal(saved.message.label, 'Written by an AI agent over MCP, fact-checked');
+  assert.notEqual(saved.proposal.previewHash, caseView.proposal.previewHash);
+  await assert.rejects(service.pay(caseView.id, { approvalToken: approval.token }), (e) => e.code === 'APPROVAL_REVOKED');
+  assert.equal(service.updateMessage(caseView.id, 'Anything a person writes.').message.label, 'Edited by a person', 'a person may write anything');
+});
