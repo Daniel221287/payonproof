@@ -45,7 +45,8 @@ const verdicts = (view) => (view.verification?.lines ?? []).map((line) => line.v
 const totals = (view) => JSON.stringify(view.verification?.totals ?? null);
 
 const reference = await start({ AI_PROVIDER: 'offline' });
-const live = await start({});
+// A fresh server for every run, so no run is served from another run's cache.
+let live = await start({});
 const health = await (await fetch(`${live.base}/health`)).json();
 if (health.ai === 'offline') {
   console.error('No AI provider is configured (set NEBIUS_API_KEY, GEMINI_API_KEY or AI_BASE_URL in .env).');
@@ -63,6 +64,10 @@ console.log('| --- | --- | --- | --- | --- | --- | --- |');
 let failures = 0;
 try {
   for (let run = 1; run <= runs; run += 1) {
+    if (run > 1) {
+      await live.app.close();
+      live = await start({});
+    }
     for (const id of ids) {
       const expected = (await analyze(reference.base, id)).view;
       const { ms, view } = await analyze(live.base, id);
@@ -70,7 +75,7 @@ try {
       const sameTotals = totals(view) === totals(expected);
       const fellBack = Boolean(view.extraction.fallback);
       if (!sameVerdicts || !sameTotals || fellBack) failures += 1;
-      const readAs = fellBack ? `fallback: ${view.extraction.fallback.reason}` : (view.extraction.outputFormat ?? 'n/a');
+      const readAs = fellBack ? `fallback: ${view.extraction.fallback.reason}` : `${view.extraction.outputFormat ?? 'n/a'}${view.extraction.cached ? ' (cached)' : ''}`;
       const message = view.message ? `${view.message.source}${view.message.note ? ' (note)' : ''}` : 'none';
       console.log(`| ${run} | ${id} | ${sameVerdicts ? 'yes' : `NO: ${verdicts(view)}`} | ${sameTotals ? 'yes' : 'NO'} | ${readAs} | ${message} | ${(ms / 1000).toFixed(1)} s |`);
     }
