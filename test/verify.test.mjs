@@ -321,6 +321,13 @@ test('roles match through contract aliases; a trade on the timesheet without a c
   assert.equal(line.findings[0].params.cause, 'ROLE_NO_RATE');
   assert.equal(line.payableCents, 0);
   assert.match(line.reason, /says Jan Nowak worked as Crane operator, and contract SC-1 has no rate per h for that trade/);
+  const mixed = run({
+    lines: [labour('1', 'Jan Nowak', '2026-09-16', 9)],
+    entries: [entry('Nowak, Jan', '2026-09-16', 5, true, { role: 'Steel fixer' }), entry('Nowak, Jan', '2026-09-16', 4, true, { role: 'Crane operator' })],
+  });
+  assert.equal(byId(mixed, '1').verdict, 'PARTIAL');
+  assert.equal(byId(mixed, '1').payableCents, 20500);
+  assert.match(byId(mixed, '1').reason, /; 4 h are signed under a trade without a contract rate \(Crane operator\)\./);
 });
 
 test('ROLE_MISMATCH never raises a rate: a dearer trade on the timesheet is noted, the invoice price stays the limit', () => {

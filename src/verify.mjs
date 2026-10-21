@@ -279,8 +279,12 @@ export function verifyCase({ contract, invoice, timesheets = [], deliveryNotes =
         provenMilli = line.quantityMilli - need;
         if (provenMilli < line.quantityMilli) {
           const unsignedMilli = isLabour ? candidates.filter((entry) => !entry.signed).reduce((sum, entry) => sum + entry.hoursMilli, 0) : 0;
+          const unpricedMilli = unpricedTrades.reduce((sum, entry) => sum + entry.hoursMilli, 0);
+          const unpricedNote = unpricedMilli
+            ? `; ${qty(unpricedMilli)} h are signed under a trade without a contract rate (${[...new Set(unpricedTrades.map((entry) => entry.role))].join(', ')})`
+            : '';
           add('PARTIAL', isLabour
-            ? `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} h are on a signed timesheet (${listIds(used)})${unsignedMilli ? `; ${qty(unsignedMilli)} h are not signed by the site manager` : ''}.`
+            ? `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} h are on a signed timesheet (${listIds(used)})${unsignedMilli ? `; ${qty(unsignedMilli)} h are not signed by the site manager` : ''}${unpricedNote}.`
             : `Only ${qty(provenMilli)} of ${qty(line.quantityMilli)} ${unitLabel} were delivered (${listIds(used)}).`,
           { provenMilli, claimedMilli: line.quantityMilli, unit: unitLabel });
         }
