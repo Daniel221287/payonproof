@@ -226,3 +226,47 @@ test('an unreadable document means "cannot verify": no verdicts, no payable figu
   assert.deepEqual(readable.unreadable, []);
   assert.equal(readable.verification.totals.payableCents, 227063);
 });
+
+function serviceWithAi(generateJson, env = {}) {
+  const config = resolveConfig({ PAYPAL_MOCK: '1', ...env });
+  const mock = createMockPayPal();
+  const ai = { id: 'nebius', model: 'nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B', isAI: true, label: 'Nebius Token Factory (test)', generateJson };
+  return createService({
+    config, samples, approvals: createApprovalRegistry(), readbackDelaysMs: [0, 0, 0], aiProvider: ai,
+    payPalClient: createPayPalClient({ ...config.paypal, fetch: mock.fetch }),
+  });
+}
+
+test('bundled samples fall back to the offline parser when the AI provider fails, and say so', async () => {
+  const down = serviceWithAi(async () => { throw new AiError('AI_NETWORK', 'The AI endpoint could not be reached (ECONNREFUSED).', { retryable: true }); });
+  const caseView = await down.analyze({ sampleId: 'overbilled' });
+  assert.equal(caseView.extraction.label, 'AI unavailable (the AI endpoint could not be reached) — offline sample parser used for this sample');
+  assert.equal(caseView.extraction.isAI, false);
+  assert.equal(caseView.extraction.fallback.provider, 'nebius');
+  assert.equal(caseView.verification.totals.payableCents, 503500, 'the demo still works');
+  assert.equal(caseView.proposal.status, 'AWAITING_HUMAN_APPROVAL');
+  assert.equal(caseView.message.source, 'template');
+  const warning = caseView.verification.caseFindings[0];
+  assert.equal(warning.code, 'AI_FALLBACK');
+  assert.equal(warning.reason, 'AI unavailable (the AI endpoint could not be reached): this bundled sample was read by the offline sample parser instead. Detail: The AI endpoint could not be reached (ECONNREFUSED).');
+
+  const budget = serviceWithAi(async () => ({ json: {} }), { AI_MAX_CALLS_PER_HOUR: '1' });
+  const first = await budget.analyze({ sampleId: 'honest' });
+  assert.equal(first.extraction.fallback.reason, 'the model answer did not pass validation', 'an empty JSON object fails the validator');
+  const second = await budget.analyze({ sampleId: 'rate-drift' });
+  assert.equal(second.extraction.fallback.reason, 'the AI budget of this server is used up');
+  assert.equal(second.verification.totals.payableCents, 174150);
+
+  const http = serviceWithAi(async () => { throw new AiError('AI_HTTP_ERROR', 'The AI endpoint returned HTTP 429: quota', { status: 429 }); });
+  assert.equal((await http.analyze({ sampleId: 'multilingual' })).extraction.label, 'AI unavailable (the AI endpoint answered HTTP 429) — offline sample parser used for this sample');
+});
+
+test('pasted documents never fall back: a failed AI provider leaves them unreadable', async () => {
+  const down = serviceWithAi(async () => { throw new AiError('AI_TIMEOUT', 'The model did not answer within 60 s.'); });
+  const caseView = await down.analyze({ documents: honestDocuments() });
+  assert.equal(caseView.extraction.fallback, null);
+  assert.equal(caseView.extraction.isAI, true);
+  assert.equal(caseView.unreadable.length, 4);
+  assert.equal(caseView.verification, null);
+  assert.equal(caseView.proposal, null);
+});

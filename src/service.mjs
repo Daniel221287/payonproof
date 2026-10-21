@@ -11,7 +11,7 @@
  *  - "Paid" is only ever claimed from PayPal's readback.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { AiError } from './ai.mjs';
+import { AiError, createAiProvider } from './ai.mjs';
 import { ApprovalError } from './approval.mjs';
 import { hashCanonical } from './canonical.mjs';
 import { assembleCaseInput, createExtractionCache, describeIssues, extractDocuments } from './extract.mjs';
@@ -52,6 +52,22 @@ export class ServiceError extends Error {
 const ascii = (text) => String(text).normalize('NFKD').replace(/[^\x20-\x7e]/g, '');
 
 /** Constant-time comparison; hashing first means not even the length of the secret leaks. */
+/** Short reasons for falling back from a failed AI provider to the offline parser (bundled samples only). */
+const AI_FALLBACK_REASONS = {
+  AI_NETWORK: 'the AI endpoint could not be reached',
+  AI_TIMEOUT: 'the model did not answer in time',
+  AI_BUDGET: 'the AI budget of this server is used up',
+  AI_BAD_JSON: 'the model returned no usable JSON',
+  AI_EMPTY: 'the model returned no answer',
+  AI_INCOMPLETE: 'the model answer was cut off',
+  AI_BLOCKED: 'the provider blocked the request',
+};
+
+function fallbackReason(doc) {
+  if (doc.errorCode === 'AI_HTTP_ERROR') return `the AI endpoint answered HTTP ${doc.errorStatus ?? 'with an error'}`;
+  return AI_FALLBACK_REASONS[doc.errorCode] ?? 'the model answer did not pass validation';
+}
+
 function sameSecret(given, expected) {
   const digest = (value) => createHash('sha256').update(String(value ?? '')).digest();
   return timingSafeEqual(digest(given), digest(expected));
@@ -89,6 +105,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
       },
     }
     : aiProvider;
+  const offlineProvider = aiProvider.isAI ? createAiProvider({ provider: 'offline', model: 'offline-sample-parser' }) : aiProvider;
 
   const paypalEnvironment = config.paypal.mode === 'mock' ? 'mock' : config.paypal.environment;
   const iso = () => new Date(now()).toISOString();
@@ -168,12 +185,12 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
     });
   }
 
-  async function draftMessageCached(facts) {
-    const key = `msg|${provider.id}|${provider.model}|${hashCanonical(facts)}`;
+  async function draftMessageCached(facts, writer = provider) {
+    const key = `msg|${writer.id}|${writer.model}|${hashCanonical(facts)}`;
     const hit = cache.get(key);
     if (hit) return { ...hit };
-    const message = await draftMessage({ provider, facts });
-    if (message.source === 'ai' || !provider.isAI) cache.set(key, { ...message });
+    const message = await draftMessage({ provider: writer, facts });
+    if (message.source === 'ai' || !writer.isAI) cache.set(key, { ...message });
     return message;
   }
 
@@ -227,6 +244,7 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         isAI: record.extraction.isAI,
         label: record.extraction.label,
         promptVersion: record.extraction.promptVersion,
+        fallback: record.extraction.fallback ?? null,
         startedAt: record.extraction.startedAt,
         durationMs: record.extraction.durationMs,
         inputSha256: record.extraction.inputSha256,
@@ -377,7 +395,22 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         docs = normalizeDocuments(documents);
         source = { kind: 'pasted', title: 'Your documents' };
       }
-      const extraction = await extractDocuments(docs, { provider, cache, now });
+      let extraction = await extractDocuments(docs, { provider, cache, now });
+      let writer = provider;
+      if (source.kind === 'sample' && provider.isAI && extraction.documents.some((doc) => doc.status !== 'ok')) {
+        // The bundled samples follow the offline parser's layout, so a failed AI provider (network, HTTP
+        // error, budget, bad JSON) does not take the demo down. Pasted documents never fall back.
+        const failed = extraction.documents.find((doc) => doc.status !== 'ok');
+        const reason = fallbackReason(failed);
+        log({ event: 'ai.fallback_offline', sampleId: source.sampleId, provider: provider.id, code: failed.errorCode ?? 'VALIDATION' });
+        const offline = await extractDocuments(docs, { provider: offlineProvider, cache, now });
+        extraction = {
+          ...offline,
+          label: `AI unavailable (${reason}) — offline sample parser used for this sample`,
+          fallback: { provider: provider.id, model: provider.model, reason, detail: describeIssues(failed.errors, 1) },
+        };
+        writer = offlineProvider;
+      }
       const { input, blockers } = assembleCaseInput(extraction);
       // A document that could not be read is missing evidence of unknown content: nothing is verified,
       // so no verdict, payable figure or message is built from it.
@@ -405,10 +438,16 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
         const verification = verifyCase(input);
         verification.blockers = [...blockers, ...verification.blockers];
         verification.caseFindings = [...blockers, ...verification.caseFindings];
+        if (extraction.fallback) {
+          verification.caseFindings.unshift({
+            code: 'AI_FALLBACK', severity: 'warning',
+            reason: `AI unavailable (${extraction.fallback.reason}): this bundled sample was read by the offline sample parser instead. Detail: ${extraction.fallback.detail}.`,
+          });
+        }
         record.verification = verification;
         record.blockers = verification.blockers;
         const facts = buildMessageFacts({ contract: input.contract, invoice: input.invoice, verification });
-        const message = await draftMessageCached(facts);
+        const message = await draftMessageCached(facts, writer);
         record.message = { ...message, language: facts.language, languageName: facts.languageName, sha256: messageSha256(message.text) };
         record.proposal = proposalFor(record, message.text);
       }
