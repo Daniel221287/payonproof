@@ -208,7 +208,7 @@
           <div class="passcode" id="passcode-row" hidden>
             <label for="passcode">Approver passcode</label>
             <input type="password" id="passcode" autocomplete="off" aria-describedby="passcode-hint">
-            <small class="passcode-hint" id="passcode-hint">Only the approving person has it. Five wrong passcodes lock approvals for everyone for 15 minutes.</small>
+            <small class="passcode-hint" id="passcode-hint">Only the approving person has it. After 20 wrong passcodes within 15 minutes, approvals are locked for everyone for 15 minutes.</small>
           </div>
           <p class="note" id="passcode-note" hidden>No approver passcode is set. That is allowed only while the server listens on 127.0.0.1, and then any program on this computer that can send HTTP to it could approve.</p>
           <button type="button" class="button-sign" id="approve-btn" disabled>

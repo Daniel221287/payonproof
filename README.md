@@ -172,7 +172,7 @@ There is no approval tool, and no tool accepts the approver passcode. An agent v
 | `POST /api/analyze` | `{sampleId}` or `{documents: [{type, name, text}]}`: extract, verify, draft the message, build the proposal |
 | `GET /api/cases/:id` | A case as shown in the UI |
 | `POST /api/message` | `{caseId, text}`: replace the message (new previewHash, approvals withdrawn) |
-| `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 5 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`) |
+| `POST /api/approve` | `{caseId, previewHash, confirm: true, passcode}`: the human approval. Needs the approver passcode whenever `APPROVER_PASSCODE` is set (always on a reachable server); 20 wrong passcodes in 15 minutes lock it for everyone for 15 minutes (`429 APPROVALS_LOCKED`, with the time approvals reopen) |
 | `POST /api/pay` | `{caseId, approvalToken}`: pay through PayPal and read back |
 | `GET /api/payout/:id` | Read the payout back from PayPal again (never sends anything) |
 | `POST /api/payout/:id/reconcile` | Resolve `UNKNOWN_AFTER_SEND` with the same `sender_batch_id` |
@@ -186,7 +186,7 @@ State-changing requests must be JSON and, when they carry an `Origin`, come from
 - Evidence and claims come from different parties and are read separately.
 - The payee is taken from the contract, never from the invoice; a different address on the invoice raises a warning.
 - Approval is explicit, exact (hash-bound), single-use, short-lived and withdrawn by any change.
-- **The approver passcode is the approval boundary.** Whenever the server can be reached beyond this computer (`PORT`, `RENDER`, a non-loopback `ALLOWED_HOSTS` or `PUBLIC_BASE_URL`), it refuses to start without an `APPROVER_PASSCODE` of at least 8 characters. Passcodes are compared in constant time. After 5 wrong passcodes within 15 minutes, approvals are refused for everyone for 15 minutes (`429 APPROVALS_LOCKED`); the lockout is global, so changing IP addresses does not help. MCP has no approval tool and never accepts the passcode. The `Origin` check only stops other websites.
+- **The approver passcode is the approval boundary.** Whenever the server can be reached beyond this computer (`PORT`, `RENDER`, a non-loopback `ALLOWED_HOSTS` or `PUBLIC_BASE_URL`), it refuses to start without an `APPROVER_PASSCODE` of at least 8 characters. Passcodes are compared in constant time. After 20 wrong passcodes within 15 minutes, approvals are refused for everyone for 15 minutes (`429 APPROVALS_LOCKED`, and the page says when they reopen); the lockout is global, so changing IP addresses does not help, and the per-IP limits apply as well. MCP has no approval tool and never accepts the passcode. The `Origin` check only stops other websites.
 - **Without a passcode** (allowed only while the server listens on 127.0.0.1, as `npm run demo` does), anything that can send HTTP to 127.0.0.1 can approve: a script, or an agent with an HTTP tool. Set `APPROVER_PASSCODE` locally too if other programs on the computer are not trusted.
 - Three independent layers prevent double payment (see above); unknown outcomes are reconciled, never blindly retried.
 - Sandbox only; startup refuses unsafe PayPal settings.

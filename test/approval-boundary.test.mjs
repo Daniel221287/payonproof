@@ -46,7 +46,7 @@ function serviceWithPasscode(clock) {
   });
 }
 
-test('five wrong passcodes lock approvals for everyone for 15 minutes; the right passcode then waits too', async () => {
+test('20 wrong passcodes lock approvals for everyone for 15 minutes; the right passcode then waits too', async () => {
   let t = Date.parse('2026-10-21T20:00:00Z');
   const clock = { now: () => t };
   const service = serviceWithPasscode(clock);
@@ -57,7 +57,9 @@ test('five wrong passcodes lock approvals for everyone for 15 minutes; the right
   for (let i = 1; i < PASSCODE_LOCKOUT.maxFailures; i += 1) {
     assert.throws(attempt(`wrong-${i}`), (e) => e.status === 403 && e.code === 'PASSCODE_INVALID' && /more wrong/.test(e.message));
   }
-  assert.throws(attempt('wrong-5'), (e) => e.status === 429 && e.code === 'APPROVALS_LOCKED' && e.extra.retryAfterSeconds === 900);
+  assert.equal(PASSCODE_LOCKOUT.maxFailures, 20);
+  assert.throws(attempt('wrong-20'), (e) => e.status === 429 && e.code === 'APPROVALS_LOCKED' && e.extra.retryAfterSeconds === 900
+    && e.extra.reopensAt === '2026-10-21T20:15:00.000Z' && /They reopen at 20:15 UTC, in 15 minutes\./.test(e.message));
   assert.throws(attempt(PASSCODE), (e) => e.code === 'APPROVALS_LOCKED', 'even the right passcode is refused while locked');
 
   t += PASSCODE_LOCKOUT.lockMs - 1000;
@@ -72,9 +74,10 @@ test('wrong passcodes older than 15 minutes no longer count toward the lockout',
   const service = serviceWithPasscode({ now: () => t });
   const caseView = await service.analyze({ sampleId: 'honest' });
   const attempt = (passcode) => () => service.approve(caseView.id, { previewHash: caseView.proposal.previewHash, confirm: true, passcode });
-  for (let i = 0; i < 4; i += 1) assert.throws(attempt('nope-nope'), (e) => e.code === 'PASSCODE_INVALID');
+  const below = PASSCODE_LOCKOUT.maxFailures - 1;
+  for (let i = 0; i < below; i += 1) assert.throws(attempt('nope-nope'), (e) => e.code === 'PASSCODE_INVALID');
   t += PASSCODE_LOCKOUT.windowMs + 1;
-  for (let i = 0; i < 4; i += 1) assert.throws(attempt('nope-nope'), (e) => e.code === 'PASSCODE_INVALID');
+  for (let i = 0; i < below; i += 1) assert.throws(attempt('nope-nope'), (e) => e.code === 'PASSCODE_INVALID');
   assert.ok(service.approve(caseView.id, { previewHash: caseView.proposal.previewHash, confirm: true, passcode: PASSCODE }).approval);
 });
 
@@ -94,8 +97,9 @@ test('HTTP: a forged Origin is not enough, and the lockout is global across clie
     assert.equal((await forged.json()).error.code, 'PASSCODE_REQUIRED');
 
     const statuses = [];
-    for (let i = 0; i < 6; i += 1) statuses.push((await post('/api/approve', { ...body, passcode: `guess-${i}` }, `203.0.113.${i}`)).status);
-    assert.deepEqual(statuses, [403, 403, 403, 403, 429, 429], 'rotating addresses does not reset the global counter');
+    for (let i = 0; i <= PASSCODE_LOCKOUT.maxFailures; i += 1) statuses.push((await post('/api/approve', { ...body, passcode: `guess-${i}` }, `203.0.113.${i}`)).status);
+    const expected = [...Array(PASSCODE_LOCKOUT.maxFailures - 1).fill(403), 429, 429];
+    assert.deepEqual(statuses, expected, 'rotating addresses does not reset the global counter');
     const locked = await post('/api/approve', { ...body, passcode: PASSCODE }, '192.0.2.50');
     assert.equal(locked.status, 429);
     assert.equal(locked.headers.get('retry-after'), '900');

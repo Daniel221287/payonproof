@@ -717,7 +717,13 @@
       $('#pay').scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
     } catch (error) {
       state.busy = null;
-      showError('#approve-error', error);
+      if (error.code === 'APPROVALS_LOCKED' && error.data?.error?.reopensAt) {
+        const reopens = new Date(error.data.error.reopensAt);
+        const minutes = Math.max(1, Math.ceil((reopens.getTime() - Date.now()) / 60000));
+        showError('#approve-error', new Error(`Approvals are locked for everyone after too many wrong passcodes. They reopen at ${reopens.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} (in ${minutes} minute${minutes === 1 ? '' : 's'}).`));
+      } else {
+        showError('#approve-error', error);
+      }
       if (error.code === 'PREVIEW_CHANGED') refreshCase();
     } finally {
       setBusy(button, false);

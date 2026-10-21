@@ -26,10 +26,12 @@ import { verifyCase } from './verify.mjs';
 export const LIMITS = Object.freeze({ maxDocuments: 12, maxDocumentChars: 60_000, maxMessageChars: 4_000, maxCases: 500 });
 
 /**
- * Approver passcode lockout. It is global, not per client: after 5 wrong passcodes within 15 minutes
+ * Approver passcode lockout. It is global, not per client: after 20 wrong passcodes within 15 minutes
  * approvals are refused for everyone for 15 minutes, so changing IP addresses gains an attacker nothing.
+ * With a passcode of at least 8 characters that allows about 2,000 guesses a day; 20 (not fewer) keeps a
+ * stranger or a few typos from locking the person out too easily. The per-IP limits still apply.
  */
-export const PASSCODE_LOCKOUT = Object.freeze({ maxFailures: 5, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
+export const PASSCODE_LOCKOUT = Object.freeze({ maxFailures: 20, windowMs: 15 * 60_000, lockMs: 15 * 60_000 });
 
 export class ServiceError extends Error {
   /**
@@ -96,10 +98,13 @@ export function createService({ config, samples, aiProvider, payPalClient, appro
   let approvalsLockedUntil = 0;
 
   function lockedError() {
-    const until = new Date(approvalsLockedUntil).toISOString().slice(11, 16);
+    const reopensAt = new Date(approvalsLockedUntil).toISOString();
+    const retryAfterSeconds = Math.max(1, Math.ceil((approvalsLockedUntil - now()) / 1000));
+    const minutes = Math.ceil(retryAfterSeconds / 60);
     return new ServiceError(429, 'APPROVALS_LOCKED',
-      `Approvals are locked for everyone until ${until} UTC after ${PASSCODE_LOCKOUT.maxFailures} wrong approver passcodes within ${PASSCODE_LOCKOUT.windowMs / 60_000} minutes.`,
-      { retryAfterSeconds: Math.max(1, Math.ceil((approvalsLockedUntil - now()) / 1000)) });
+      `Approvals are locked for everyone after ${PASSCODE_LOCKOUT.maxFailures} wrong approver passcodes within ${PASSCODE_LOCKOUT.windowMs / 60_000} minutes. `
+      + `They reopen at ${reopensAt.slice(11, 16)} UTC, in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      { retryAfterSeconds, reopensAt });
   }
 
   /** Throws unless the approver passcode is right; counts wrong guesses toward the global lockout. */
