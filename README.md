@@ -8,6 +8,8 @@ AI reads the messy documents. A deterministic engine proves every invoice line a
 
 Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community, and is set up to deploy on Render (`render.yaml`).
 
+**Live demo:** https://payonproof-sy50.onrender.com (Render free instance: the first request after a quiet period can take up to a minute). Documents are read by NVIDIA Nemotron on Nebius Token Factory; payments currently go to MOCK PayPal. Anyone can verify the sample cases; approving a payment needs the demo approver passcode, which the hackathon judges get with the submission. Agents can connect over MCP at `https://payonproof-sy50.onrender.com/mcp`.
+
 ---
 
 ## Why
