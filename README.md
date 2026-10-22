@@ -8,7 +8,9 @@ AI reads the messy documents. A deterministic engine proves every invoice line a
 
 Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community, and is set up to deploy on Render (`render.yaml`).
 
-**Live demo:** https://payonproof-sy50.onrender.com (Render free instance: the first request after a quiet period can take up to a minute). Documents are read by NVIDIA Nemotron on Nebius Token Factory; payments currently go to MOCK PayPal. Anyone can verify the sample cases; approving a payment needs the demo approver passcode, which the hackathon judges get with the submission. Agents can connect over MCP at `https://payonproof-sy50.onrender.com/mcp`.
+**Live demo:** https://payonproof-sy50.onrender.com (Render free instance: the first request after a quiet period can take up to a minute). Documents are read by NVIDIA Nemotron on Nebius Token Factory, and payments go to the **PayPal sandbox**: a German sandbox Business account pays a German sandbox Personal account. The sample payees are fictional, so `PAYEE_EMAIL_OVERRIDE` sends every payout to that test account, and the approval panel says so. Anyone can verify the sample cases; approving a payment needs the demo approver passcode, which the hackathon judges get with the submission. If a sample says its invoice was already paid, someone paid it shortly before: that is the double-payment guard, and the free instance forgets paid invoices when it restarts. Agents can connect over MCP at `https://payonproof-sy50.onrender.com/mcp`.
+
+Checked on 22 October 2026 on the live demo: the **Polish invoice, German site papers** sample was read by Nemotron, approved with the passcode and paid through the PayPal sandbox (batch `F4R8DJ29HW27Q`, batch SUCCESS, item SUCCESS, €1,800.00 to the sandbox Personal account), and the receipt read back from PayPal said **PAID & VERIFIED**.
 
 ---
 
@@ -239,7 +241,7 @@ State-changing requests must be JSON and, when they carry an `Origin`, come from
    ```
    Leave `PAYPAL_MOCK` empty.
 6. `npm start`, open `http://127.0.0.1:4410`, run a sample, approve and pay. The approval panel states that the sandbox override replaces the contract payee. Check the payment in the sandbox Personal account at [sandbox.paypal.com](https://www.sandbox.paypal.com).
-7. The samples are in EUR. If the payout is rejected because of currency or funds, create a sandbox **Business** account with country Germany (EUR), create a sandbox app linked to it and use that app's credentials.
+7. The samples are in EUR. With the default sandbox accounts of a Polish developer account, PayPal refused the payout with `NON_HOLDING_CURRENCY` (the sandbox balance was not held in EUR), and PayOnProof showed it as rejected with nothing sent. The fix: create a sandbox **Business** account and a **Personal** account with country Germany (EUR), create a sandbox app linked to that Business account (Payouts enabled), use that app's credentials and put the German Personal account in `PAYEE_EMAIL_OVERRIDE`. The live demo runs this way.
 
 ## Run locally
 
@@ -306,7 +308,7 @@ docs/img/               screenshots (desktop 1280×800 and phone 390×844, light
 - Matching after normalisation is exact by design (no fuzzy matching). Roles and items in other languages need an alias or article code in the contract. An item whose name and article code point at two different contract items gets no rate at all.
 - The message language check is a heuristic (script and common words), good at catching a draft in the wrong language, not a proof of good grammar. A person reads the message before approving.
 - Amounts are net. VAT and reverse charge are out of scope. Only currencies with two decimals are accepted.
-- The MOCK PayPal reports a fee of 0.00; the sandbox reports its own values.
+- The MOCK PayPal reports a fee of 0.00; the sandbox reports its own values (€12.00 per payout in our runs).
 - All companies, people, addresses and email addresses in the samples are fictional.
 
 ## License
