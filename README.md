@@ -4,6 +4,10 @@
 
 AI reads the messy documents. A deterministic engine proves every invoice line against signed timesheets, delivery notes and contract rates. A person approves the exact payment. PayPal Payouts pays only the proven amount, and the payout is read back from PayPal as proof.
 
+[![Watch PayOnProof verify invoices and sandbox payouts (2:40)](https://i.ytimg.com/vi/vVcLgtnQBlM/hqdefault.jpg)](https://www.youtube.com/watch?v=vVcLgtnQBlM)
+
+**Watch the 2:40 demo** to see invoice discrepancies identified, human approval of the exact amount, and a verified **PayPal sandbox** payout. [Try the live demo](https://payonproof-sy50.onrender.com). If the approach is useful, consider starring this repository.
+
 ![Proof view: claimed €6,338.00, payable €5,035.00, every line with its verdict](docs/img/desktop-light-proof.png)
 
 Built for the PayPal AI Hackathon (Best Use of PayPal + AI, agentic commerce) and the Nebius × NVIDIA Global AI Hackathon (Best Apps and Agents). Uses the PayPal developer platform (Payouts, sandbox), NVIDIA Nemotron through Nebius Token Factory (or Gemini, or any OpenAI-compatible model), AG Grid Community, and is set up to deploy on Render (`render.yaml`).
