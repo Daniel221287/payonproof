@@ -16,6 +16,8 @@ services:
     startCommand: npm start
     healthCheckPath: /health
     envVars:
+      - key: NODE_VERSION
+        value: "22.23.4"
       - key: APPROVER_PASSCODE   # required, at least 8 characters
         sync: false
       - key: PAYPAL_MOCK         # 1 = MOCK PayPal; empty = PayPal sandbox with the credentials below
